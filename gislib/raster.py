@@ -5,8 +5,6 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
-from wms_backend import log
-
 import json
 import logging
 import os
@@ -580,25 +578,3 @@ class Container(object):
         reproject(source=self.dataset,
                   target=dataset,
                   algorithm=self.algorithm)
-
-
-def main():
-    log.setup_logging()
-    p = Pyramid('pyramid', compression='NONE')
-    print('addsome')
-    p.add(gdal.Open('purmer.tif'))
-    print('updatesome')
-    p.add(gdal.Open('pyramid/0/327_4082.tif'))
-    print('getsome')
-    d = gdal.Open('purmer.tif')
-    g = DatasetGeometry.from_dataset(d)
-    d = None
-    g.width, g.height = 800, 600
-    d = g.to_dataset()
-    d.SetProjection(get_spatial_reference(GOOGLE).ExportToWkt())
-    p.warpinto(d)
-    print('done')
-
-
-if __name__ == '__main__':
-    sys.exit(main())
