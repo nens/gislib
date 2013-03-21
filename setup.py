@@ -9,6 +9,9 @@ long_description = '\n\n'.join([
     ])
 
 install_requires = [
+    'matplotlib',
+    'Pillow',
+    'scipy',
     'setuptools',
     ],
 

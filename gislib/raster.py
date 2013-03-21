@@ -5,10 +5,10 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
+import datetime
 import json
 import logging
 import os
-import sys
 
 from osgeo import gdal
 from osgeo import osr
@@ -185,11 +185,50 @@ class DatasetGeometry(Geometry):
                    (top - bottom) / self.size[1])
 
 
-class Pyramid(object):
+class AbstractGeoContainer(object):
+    """ Abstract class with locking mechanism. """
+
+    def _lock(self):
+        """ Create a lockfile. """
+        # Create directory if it does not exist in a threadsafe way
+        try:
+            os.mkdir(os.path.dirname(self._lockpath))
+        except:
+            pass
+        # Make a lockfile. Reraise OSError if not possible.
+        try:
+            fd = os.open(self._lockpath, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except OSError:
+            self._raise_locked_exception()
+
+        # Write current date in the lockfile.
+        with os.fdopen(fd, 'w') as lockfile:
+            lockfile.write(str(datetime.datetime.now()))
+
+    def _unlock(self):
+        """ Remove a lockfile """
+        os.remove(self._lockpath)
+
+    def _raise_locked_exception(self):
+        """ Raise locking specific OSError. """
+        raise OSError('This pyramid is locked for update.')
+
+    def is_locked(self):
+        """ Return if the container is locked for updating. """
+        return os.path.exists(self._lockpath)
+
+    def verify_not_locked(self):
+        """ Return None or raise exception. """
+        if self.is_locked():
+            self._raise_locked_exception()
+
+
+class Pyramid(AbstractGeoContainer):
     """
     Add and get geodata to and from a paramid of datafiles.
     """
 
+    _LOCKFILE = 'pyramid.lock'
     CONFIG_FILE = 'pyramid.json'
     CONFIG_ATTRIBUTES = ['algorithm',
                          'cellsize',
@@ -207,9 +246,14 @@ class Pyramid(object):
         initialization to first add for new pyramid.
         """
         self.config_path = os.path.join(path, self.CONFIG_FILE)
+        self._lockpath = os.path.join(path, self._LOCKFILE)
         self.path = path
 
-        if os.path.exists(path):
+        # If another process creates the pyramid, it first locks the
+        # pyramid and then creates the config file. Checking for both
+        # files in reverse order makes init threadsafe.
+        if os.path.exists(self.config_path):
+            self.verify_not_locked()
             # Config from path
             with open(self.config_path) as config_file:
                 config = json.load(config_file)
@@ -258,7 +302,6 @@ class Pyramid(object):
         if self.cellsize is None:
             self.cellsize = self._cellsize(dataset)
 
-        os.makedirs(self.path)
         config = {k: getattr(self, k) for k in self.CONFIG_ATTRIBUTES}
         with open(self.config_path, 'w') as config_file:
             json.dump(config, config_file)
@@ -437,13 +480,19 @@ class Pyramid(object):
 
     def add(self, dataset):
         """ Non-recursive version of add """
-        # Config if this is the first
-        if self.toplevel is None:
-            self._config_from_dataset(dataset)
+        self._lock()
+        try:
+            # Config if this is the first
+            if self.toplevel is None:
+                self._config_from_dataset(dataset)
 
-        # Add dataset
-        self._add(dataset)
-        self._extend()
+            # Add dataset
+            self._add(dataset)
+            self._extend()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self._unlock()
 
     def warpinto(self, dataset):
         """
@@ -466,7 +515,7 @@ class Pyramid(object):
         return dataset
 
 
-class Monolith(object):
+class Monolith(AbstractGeoContainer):
     """
     Simple dataset container that shares the methods add and warpinto of
     the pyramid. However, multiple adds just overwrite the old dataset,
@@ -477,6 +526,7 @@ class Monolith(object):
     for height, too.
     """
     TIF_FILE = 'monolith.tif'
+    _LOCKFILE = 'monolith.lock'
 
     def __init__(self, path, memory=True,
                  algorithm=0, compression='NONE'):
@@ -488,13 +538,16 @@ class Monolith(object):
         self.algorithm = algorithm
         self.compression = compression
         self.path = path
+        self.tifpath = os.path.join(path, self.TIF_FILE)
+        self._lockpath = os.path.join(path, self._LOCKFILE)
         self.memory = memory
 
-        if not os.path.exists(path):
+        if not os.path.exists(self.tifpath):
+            # Do not set dataset attribute, monolith is empty.
             return
 
-        tif_path = os.path.join(self.path, self.TIF_FILE)
-        tif_dataset = gdal.Open(str(tif_path))
+        self.verify_not_locked()
+        tif_dataset = gdal.Open(str(self.tifpath))
 
         if self.memory:
             driver = gdal.GetDriverByName(b'mem')
@@ -519,13 +572,11 @@ class Monolith(object):
 
         If self.memory, create an in-memory copy as well.
         """
+        self._lock()
 
         # Create a file copy of dataset
-        tif_path = os.path.join(self.path, self.TIF_FILE)
-        if not os.path.exists(self.path):
-            os.makedirs(self.path)
         tif_driver = gdal.GetDriverByName(b'gtiff')
-        create_args = [str(tif_path),
+        create_args = [str(self.tifpath),
                        dataset,
                        1,  # Strict, just default value
                        ['COMPRESS={}'.format(self.compression)]]
@@ -545,6 +596,7 @@ class Monolith(object):
             self.dataset = tif_dataset
 
         self._set_attributes_from_dataset()
+        self._unlock()
 
     def warpinto(self, dataset):
         """ Warp our dataset into argument dataset. """
