@@ -185,6 +185,10 @@ class DatasetGeometry(Geometry):
                    (top - bottom) / self.size[1])
 
 
+class LockError(Exception):
+    pass
+
+
 class AbstractGeoContainer(object):
     """ Abstract class with locking mechanism. """
 
@@ -192,10 +196,10 @@ class AbstractGeoContainer(object):
         """ Create a lockfile. """
         # Create directory if it does not exist in a threadsafe way
         try:
-            os.mkdir(os.path.dirname(self._lockpath))
+            os.makedirs(os.path.dirname(self._lockpath))
         except:
             pass
-        # Make a lockfile. Reraise OSError if not possible.
+        # Make a lockfile. Raise LockException if not possible.
         try:
             fd = os.open(self._lockpath, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except OSError:
@@ -211,7 +215,7 @@ class AbstractGeoContainer(object):
 
     def _raise_locked_exception(self):
         """ Raise locking specific OSError. """
-        raise OSError('This pyramid is locked for update.')
+        raise LockError('Object is locked.')
 
     def is_locked(self):
         """ Return if the container is locked for updating. """
@@ -337,7 +341,8 @@ class Pyramid(AbstractGeoContainer):
                        self.tilesize[1],
                        1,
                        self.datatype,
-                       ['COMPRESS={}'.format(self.compression)]]
+                       ['TILED=YES',
+                        'COMPRESS={}'.format(self.compression)]]
 
         if mode == 'w':
             # Use gtiff driver
@@ -520,10 +525,6 @@ class Monolith(AbstractGeoContainer):
     Simple dataset container that shares the methods add and warpinto of
     the pyramid. However, multiple adds just overwrite the old dataset,
     it only holds one dataset at a time.
-
-    TODO: Make file based monolith work and threadsafe (via filesystem
-    checking) and warping to requested projection. Then it can be used
-    for height, too.
     """
     TIF_FILE = 'monolith.tif'
     _LOCKFILE = 'monolith.lock'
@@ -579,13 +580,18 @@ class Monolith(AbstractGeoContainer):
         create_args = [str(self.tifpath),
                        dataset,
                        1,  # Strict, just default value
-                       ['COMPRESS={}'.format(self.compression)]]
+                       ['TILED=YES',
+                        'COMPRESS={}'.format(self.compression)]]
         tif_dataset = tif_driver.CreateCopy(*create_args)
 
         # Apply default projection if there is none.
         tif_dataset.SetProjection(
             get_wkt(dataset.GetProjection()),
         )
+
+        # Close and reopen dataset to force flush.
+        tif_dataset = None
+        tif_dataset = gdal.Open(str(self.tifpath))
 
         # Set dataset attribute based on memory attribute
         if self.memory:
