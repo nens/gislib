@@ -334,7 +334,7 @@ class Pyramid(AbstractGeoContainer):
                 logging.debug('Update {}'.format(path))
             else:
                 access = gdal.GA_ReadOnly
-            return gdal.Open(path, access)
+            return gdal.Open(str(path), access)
 
         create_args = [str(path),
                        self.tilesize[0],
