@@ -293,7 +293,7 @@ class Pyramid(AbstractGeoContainer):
         topleveldir = os.path.join(self.path, str(self.toplevel))
         toplevelpath = os.path.join(topleveldir,
                                     os.listdir(topleveldir)[0])
-        dataset = gdal.Open(toplevelpath)
+        dataset = gdal.Open(str(toplevelpath))
         return DatasetGeometry.from_dataset(dataset).extent
 
     def _config_from_dataset(self, dataset):
