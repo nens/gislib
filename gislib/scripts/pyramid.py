@@ -32,11 +32,9 @@ def get_parser():
 
 def pyramid(targetpath, sourcepaths):
     """ Do something spectacular. """
-    from arjan.monitor import Monitor; mon = Monitor() 
     source = gdal.Open(sourcepaths[0])
     pyramid = raster.Pyramid(targetpath)
     pyramid.add(source)
-    mon.check('Pyramid1') 
 
 def main():
     """ Call command with args from parser. """
