@@ -5,6 +5,7 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
+import collections
 import datetime
 import json
 import logging
@@ -676,12 +677,32 @@ class Pyramid2(AbstractGeoContainer):
         - Changes are recorded in metadata, via commit-style messages
         - Arbitrary amount of zoomlevels
     """
+    Tile = collections.namedtuple('Tile', ['x', 'y', 'z'])
+
     def __init__(self, path):
         """
         If path exists, configure from toplevel tile in pyramid if path exists
 
         """
-        pass
+        self.path = path
+        if os.path.exists(self.path):
+            self._read_config()
+
+    def _read_config(self):
+        """ Get pyramid parameters from configuration tile. """
+        toptile = self._get_toptile()
+        band = toptile.GetRasterBand(1)
+
+        geometry = DatasetGeometry.from_dataset(toptile)
+        self.extent = geometry.extent
+        self.tilesize = geometry.size
+
+        self.projection = get_wkt(toptile.GetProjection())
+        self.rastercount = toptile.GetRasterCount()
+
+        # Note the assumption that bands have the same blocksize and datatype
+        self.blocksize = band.GetBlockSize()
+        self.datatype = band.GetDataType()
 
     def _get_tiledict(self, sourcepaths):
         """
@@ -690,14 +711,29 @@ class Pyramid2(AbstractGeoContainer):
         This dictionary can than be mapped to a multiprocessing pool to
         update the tiles.
         """
+        # Per source: determine zoomlevel, extent, tile
+        # Per tile: Determine sources (defaultdict)
         pass
 
-    def _get_tile_path(tile):
+    def _get_tilepath(self, tile):
         """ Convert a tile namedtuple to a path using self.path. """
-        pass
+        return os.path.join(path, tile.z, tile.x, tile.y + '.tif')
 
-    def add(sourcepaths):
+    def _get_tile(self, tilepath):
+        """ Convert a tilepath to a tile namedtuple. """
+        relpath = os.path.relpath(tilepath, self.path)
+        root, ext = os.path.splitext(relpath)
+        z, x, y = root.split(os.path.sep)
+        return self.Tile(x=x, y=y, z=z)
+
+    def add(self, sourcepaths,
+            projection='epsg:3857',
+            algorithm='near', compress='deflate',
+            tilesize=(2048, 2048), blocksize=(256, 256),
+            nodatavalue=np.finfo('f4').min, datatype=Gdal.GDT_Float32):
         """
+        If first add, config with defaults or from args.
+        If not first add, raise if args are given.
         Determine which sources affect which tiles
         Project sources into tiles
         Update all tiles above the affected tiles

@@ -11,6 +11,7 @@ import logging
 from osgeo import gdal
 
 from gislib import raster
+from gislib import pyramids
 
 description = """
     Commandline tool for working with nens/gislib pyramid datasets.
@@ -32,9 +33,15 @@ def get_parser():
 
 def pyramid(targetpath, sourcepaths):
     """ Do something spectacular. """
-    source = gdal.Open(sourcepaths[0])
-    pyramid = raster.Pyramid(targetpath)
-    pyramid.add(source)
+    from arjan.monitor import Monitor; mon = Monitor()
+    #source = gdal.Open(sourcepaths[0])
+    #pyramid = raster.Pyramid(targetpath)
+    #pyramid.add(source)
+    pyramid = raster.Pyramid2(targetpath)
+    pyramid.add(sourcepaths)
+
+    mon.check('Pyramid1') 
+
 
 def main():
     """ Call command with args from parser. """
