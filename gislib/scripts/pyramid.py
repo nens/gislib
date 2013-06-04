@@ -23,19 +23,20 @@ def get_parser():
     parser = argparse.ArgumentParser(
         description=description
     )
-    parser.add_argument('sourcepath', metavar='SOURCE')
     parser.add_argument('targetpath', metavar='TARGET')
-    parser.add_argument('-of', '--output-format', 
-                        metavar='FORMAT', dest='outputformat',
-                        choices=['pyramid', 'gtiff'])
+    parser.add_argument('sourcepaths',
+                        nargs='+',
+                        metavar='SOURCE')
     return parser
 
 
-def pyramid(sourcepath, targetpath, outputformat):
+def pyramid(targetpath, sourcepaths):
     """ Do something spectacular. """
-    source = gdal.Open(sourcepath)
+    from arjan.monitor import Monitor; mon = Monitor() 
+    source = gdal.Open(sourcepaths[0])
     pyramid = raster.Pyramid(targetpath)
     pyramid.add(source)
+    mon.check('Pyramid1') 
 
 def main():
     """ Call command with args from parser. """

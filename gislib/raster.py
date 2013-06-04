@@ -14,6 +14,11 @@ from osgeo import gdal
 from osgeo import osr
 import numpy as np
 
+
+# Enable gdal exceptions
+gdal.UseExceptions()
+
+
 # Projections and transformations
 GOOGLE = 3857  # And not 900913!!! Gdal does not understand it.
 RD = ("+proj=sterea +lat_0=52.15616055555555 +lon_0=5.38763888888889 "
@@ -636,3 +641,70 @@ class Container(object):
         reproject(source=self.dataset,
                   target=dataset,
                   algorithm=self.algorithm)
+
+
+def _reproject_from_paths(tilepath, sourcepaths, **kwargs):
+    """
+    Reproject the datasets at sourcepaths into the dataset at tilepath.
+
+    Kwargs will contain the algorithm. Uses reproject function from this module
+
+    THis van
+    """
+    pass
+
+
+def _create_tile(targetpath, templatepath, geotransform):
+    """
+    Create an empty tile at path, with the properties of the tile at
+    templatepath and the indicated geotransform
+    """
+    pass
+
+
+class Pyramid2(AbstractGeoContainer):
+    """
+    New style pyramid object. The warpinto method behaves the same
+    as the old pyramid object.  However, the add method now accepts
+    a list of paths to be used wih gdal.Open, so /vsizip/, /vsicurl/,
+    are allowed as well.
+
+    features:
+        - Multiprocessing is used for add operations, therefore
+        - Much faster adding of both single and multiple file datasets
+        - Configuration is not stored as json, but taken from toplevel tile
+        - Changes are recorded in metadata, via commit-style messages
+        - Arbitrary amount of zoomlevels
+    """
+    def __init__(self, path):
+        """
+        If path exists, configure from toplevel tile in pyramid if path exists
+
+        """
+        pass
+
+    def _get_tiledict(self, sourcepaths):
+        """
+        Return a dictionary of tilepath: sourcepaths.
+
+        This dictionary can than be mapped to a multiprocessing pool to
+        update the tiles.
+        """
+        pass
+
+    def _get_tile_path(tile):
+        """ Convert a tile namedtuple to a path using self.path. """
+        pass
+
+    def add(sourcepaths):
+        """
+        Determine which sources affect which tiles
+        Project sources into tiles
+        Update all tiles above the affected tiles
+        """
+        pass
+
+    def warpinto(self):
+        """
+        """
+        pass
