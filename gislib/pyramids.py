@@ -96,7 +96,7 @@ class Pyramid(AbstractGeoContainer):
         - Changes are recorded in metadata, via commit-style messages
         - Arbitrary amount of zoomlevels
     """
-    Tile = collections.namedtuple('Tile', ['x', 'y', 'z'])
+    Tile = collections.namedtuple('Tile', ['x', 'y', 'level'])
 
     def __init__(self, path):
         """
@@ -107,7 +107,7 @@ class Pyramid(AbstractGeoContainer):
         if os.path.exists(self.path):
             self._read_config()
 
-    def _read_config(self):
+    def _config_from_tile(self):
         """ Get pyramid parameters from configuration tile. """
         toptile = self._get_toptile()
         band = toptile.GetRasterBand(1)
@@ -123,6 +123,20 @@ class Pyramid(AbstractGeoContainer):
         self.blocksize = band.GetBlockSize()
         self.datatype = band.GetDataType()
 
+    def _config_from_kwargs(self, **kwargs):
+        """ Get pyramid parameters from kwargs. """
+        if hasattr(self, 'projection'):
+            logger.debug('already configured!')
+            return
+
+        # Configure kwargs
+        self.projection = kwargs.get('projection', 'epsg:3857')
+        self.tilesize = kwargs.get('tilesize', (2048, 2048))
+        self.blocksize = kwargs.get('blocksize', (256, 256))
+        self.nodatavalue = kwargs.get('nodatavalue', np.finfo('f4').min),
+        self.datatype = kwargs.get('datatype', gdal.GDT_Float32)
+
+
     def _get_tiledict(self, sourcepaths):
         """
         Return a dictionary of tilepath: sourcepaths.
@@ -130,13 +144,20 @@ class Pyramid(AbstractGeoContainer):
         This dictionary can than be mapped to a multiprocessing pool to
         update the tiles.
         """
-        # Per source: determine zoomlevel, extent, tile
-        # Per tile: Determine sources (defaultdict)
-        pass
+        result = collections.defaultdict(list)
+        for sourcepath in sourcepaths:
+            # Determine tilepath:
+            # - transformed extent => tiles in projection unit
+            # - transformed cellsize => zoomlevel in projection unit
+            # - which tiles then?
+            # - tilepaths?
+            # Add this tile: sourcepath to result
+            continue
+
 
     def _get_tilepath(self, tile):
         """ Convert a tile namedtuple to a path using self.path. """
-        return os.path.join(self.path, tile.z, tile.x, tile.y + '.tif')
+        return os.path.join(self.path, tile.level, tile.x, tile.y + '.tif')
 
     def _get_tile(self, tilepath):
         """ Convert a tilepath to a tile namedtuple. """
@@ -145,11 +166,7 @@ class Pyramid(AbstractGeoContainer):
         z, x, y = root.split(os.path.sep)
         return self.Tile(x=x, y=y, z=z)
 
-    def add(self, sourcepaths,
-            projection='epsg:3857',
-            algorithm='near', compress='deflate',
-            tilesize=(2048, 2048), blocksize=(256, 256),
-            nodatavalue=np.finfo('f4').min, datatype=gdal.GDT_Float32):
+    def add(self, sourcepaths, **kwargs):
         """
         If first add, config with defaults or from args.
         If not first add, raise if args are given.
@@ -157,9 +174,16 @@ class Pyramid(AbstractGeoContainer):
         Project sources into tiles
         Update all tiles above the affected tiles
         """
-        pass
+        self._config_from_kwargs(**kwargs)
+
+        # Compression and algorithm can be specified per add action.
+        algorithm = kwargs.get('algorithm', gdal.GRA_NearestNeighbour)
+        compression = kwargs.get('compress', 'deflate')
+        self._get_tiledict(sourcepaths)
 
     def warpinto(self):
         """
+        This is the main access method. Investigate if it is faster to
+        use driver.Open, compared to gdal.Open.
         """
         pass

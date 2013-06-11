@@ -10,7 +10,7 @@ import logging
 
 from osgeo import gdal
 
-from gislib import raster
+from gislib import rasters
 from gislib import pyramids
 
 description = """
@@ -37,10 +37,10 @@ def pyramid(targetpath, sourcepaths):
     #source = gdal.Open(sourcepaths[0])
     #pyramid = raster.Pyramid(targetpath)
     #pyramid.add(source)
-    pyramid = raster.Pyramid2(targetpath)
+    pyramid = pyramids.Pyramid(targetpath)
     pyramid.add(sourcepaths)
 
-    mon.check('Pyramid1') 
+    mon.check('Pyramid2') 
 
 
 def main():
