@@ -136,6 +136,34 @@ class Pyramid(AbstractGeoContainer):
         self.nodatavalue = kwargs.get('nodatavalue', np.finfo('f4').min),
         self.datatype = kwargs.get('datatype', gdal.GDT_Float32)
 
+    def _tilepath(tile):
+        """ 
+        Return path to tile. 
+
+        TODO: Make this some hash thing to limit amount of files per folder.
+        """
+        return os.path.join(self.path, level, x, y + '.tif')
+    
+    
+    def _get_tilepaths(self, geometry):
+        """
+        Return pyramid tilepath generator for extent and cellsize.
+        """
+        # Determine limits for the indices and return a generator
+        delta = self._geometry(level).delta()
+        x1, y1 = extent[:2] // delta
+        # If extent upper bounds are on tile edge,
+        # don't add neighbouring tiles.
+        x2, y2 = np.where(
+            extent[2:] // delta == extent[2:] / delta,
+            extent[2:] // delta - 1,
+            extent[2:] // delta,
+        )
+        # Return generator
+        return ((x, y)
+                for y in np.arange(y1, y2 + 1, dtype=np.uint32)
+                for x in np.arange(x1, x2 + 1, dtype=np.uint32))
+
 
     def _get_tiledict(self, sourcepaths):
         """
@@ -146,13 +174,24 @@ class Pyramid(AbstractGeoContainer):
         """
         result = collections.defaultdict(list)
         for sourcepath in sourcepaths:
-            # Determine tilepath:
+            dataset = gdal.Open(sourcepath)
+            geometry = rasters.DatasetGeometry.from_dataset(dataset)
+            extent = geometry.extent
+            transformed_extent = rasters.get_transformed_extent(
+                extent=extent,
+                source_projection=dataset.GetProjection(),
+                target_projection=self.projection,
+            )
+            transformed_cellsize = geometry.transformed_cellsize(
+                source_projection=dataset.GetProjection(),
+                target_projection=self.projection,
+            )
+            tiles = self._tiles(
             # - transformed extent => tiles in projection unit
             # - transformed cellsize => zoomlevel in projection unit
             # - which tiles then?
             # - tilepaths?
             # Add this tile: sourcepath to result
-            continue
 
 
     def _get_tilepath(self, tile):
