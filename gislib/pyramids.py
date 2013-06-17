@@ -136,18 +136,26 @@ class Pyramid(AbstractGeoContainer):
         self.nodatavalue = kwargs.get('nodatavalue', np.finfo('f4').min),
         self.datatype = kwargs.get('datatype', gdal.GDT_Float32)
 
-    def _tilepath(tile):
+    def _get_tilepath(tile):
         """ 
         Return path to tile. 
 
         TODO: Make this some hash thing to limit amount of files per folder.
         """
         return os.path.join(self.path, level, x, y + '.tif')
-    
-    
-    def _get_tilepaths(self, geometry):
+
+    def _get_tiles_for_geometry(self, geometry):
         """
-        Return pyramid tilepath generator for extent and cellsize.
+        Get tiles corresponding to a geometry in 
+        """
+        
+    
+    
+    def _get_tiles(self, geometry, level):
+        """
+        Return pyramid tilepath generator for a geometry.
+
+        The returned tilepaths point to the tiles 
         """
         # Determine limits for the indices and return a generator
         delta = self._geometry(level).delta()
