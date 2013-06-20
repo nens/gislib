@@ -14,9 +14,12 @@ from osgeo import gdal
 from osgeo import osr
 import numpy as np
 
+from gislib import projections
+
 
 # Enable gdal exceptions
 gdal.UseExceptions()
+
 
 def get_transformed_extent(extent, source_projection, target_projection):
         """
@@ -33,8 +36,8 @@ def get_transformed_extent(extent, source_projection, target_projection):
                                                    [0, 3]])]
         # Transform according to projections
         x_target, y_target = np.array(osr.CoordinateTransformation(
-            get_spatial_reference(source_projection),
-            get_spatial_reference(target_projection),
+            projections.get_spatial_reference(source_projection),
+            projections.get_spatial_reference(target_projection),
         ).TransformPoints(points_source))[:, 0:2].T
 
         # Return as extent
@@ -56,8 +59,8 @@ def reproject(source, target, algorithm):
     """ Reproject source to target. """
     gdal.ReprojectImage(
         source, target,
-        get_wkt(source.GetProjection()),
-        get_wkt(target.GetProjection()),
+        projections.get_wkt(source.GetProjection()),
+        projections.get_wkt(target.GetProjection()),
         algorithm,
         0.0,
         0.125,
@@ -134,7 +137,7 @@ class DatasetGeometry(Geometry):
         dataset = driver.Create(b'',
                                 self.size[0], self.size[1], bands, datatype)
         dataset.SetGeoTransform(self.geotransform())
-        dataset.SetProjection(get_wkt(projection))
+        dataset.SetProjection(projections.get_wkt(projection))
         return dataset
 
     def transformed_cellsize(self, source_projection, target_projection):
@@ -203,7 +206,7 @@ class Pyramid(AbstractGeoContainer):
                          'projection',
                          'tilesize']
 
-    def __init__(self, path, projection=GOOGLE,
+    def __init__(self, path, projection=projections.GOOGLE,
                  algorithm=0, compression='NONE',
                  tilesize=(1024, 1024), cellsize=None):
         """
@@ -323,7 +326,7 @@ class Pyramid(AbstractGeoContainer):
         # Actual create
         dataset = driver.Create(*create_args)
         dataset.SetProjection(
-            get_spatial_reference(self.projection).ExportToWkt(),
+            projections.get_spatial_reference(self.projection).ExportToWkt(),
         )
         dataset.SetGeoTransform(
             self._geometry(level=level, tile=tile).geotransform(),
@@ -547,7 +550,7 @@ class Monolith(AbstractGeoContainer):
 
         # Apply default projection if there is none.
         tif_dataset.SetProjection(
-            get_wkt(dataset.GetProjection()),
+            projections.get_wkt(dataset.GetProjection()),
         )
 
         # Close and reopen dataset to force flush.

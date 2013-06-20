@@ -40,5 +40,6 @@ setup(name='gislib',
       entry_points={
           'console_scripts': [
               'pyramid = gislib.scripts.pyramid:main',
+              'datastore = gislib.scripts.datastore:main',
           ]},
       )
