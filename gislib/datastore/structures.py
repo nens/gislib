@@ -9,7 +9,11 @@ The dimensions and data are interweaved, since NED dimensions need a
 dimension parameter in the basic datastructure.
 """
 class Structure(object):
-    dimensions
-    data
-    blocksize
+    def __init__(self, dimensions, chunkshape, dtype):
+        self.dimensions = dimensions
+        self.chunkshape = chunkshape
+        self.dtype = dtype
+
+    def 
+
 

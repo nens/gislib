@@ -9,6 +9,10 @@ class BaseAggregator(object):
     - Median aggregator
     - Maximum aggregator
     - Interpolating aggregator
+
+    Aggregators are also responsible for cleaning of nodata chunks. It is
+    still open if the aggregator returns a chunk with nodata or removes
+    a chunk via the storage. Probably the first one.
     """
     pass
 
