@@ -45,7 +45,7 @@ A datastore has a method to
 
 - find the toplevel extent from chunk, by grabbing an arbitrary chunk
 and walking to the top of the aggregation pyramid. So, aggregation must
-be compulsory then?
+be compulsory then? At least, from a chunk in the datastore we must be able to infer it's chunk extent. Therefore we must save the chunk extent with the chunk data. Let's do that using (c)Pickle.
 
 - Let's say we don't do multidimensional aggregations. How then to find the extent of a non-aggregating dimension? No, we have to aggregate them, or keep track of the extent via the storage; but that would imply some index. No. Let's say, we don't do multidimensional aggregations, but always do aggregation in any dimension. Or do we do single block dimensions? Makes stuf complex.
 
@@ -64,7 +64,27 @@ So choices are:
     - non-aggregating, walking chunks? No, possibly unlimited chunks in a directions.
 
 
+This would be nice:
+    datastore.iterchunks(extent=???), what aggregation level?
+    datastore.itermeaningfulchunks
+    datastore.add_data
+    datastore.iterchunks(extent)
+
+    chunk.meta.get()
+    chunk.data.get()
+    chunk.data.put()
+
+
+
+    
+
+But what about the aggregations?
+
+
+
 Create converter: gdal2chunks: structure
+
+
 
 """
 

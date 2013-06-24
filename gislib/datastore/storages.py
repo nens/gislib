@@ -6,59 +6,13 @@ import hashlib
 import lz4
 import pickle
 
-class BaseStorage(object):
-    """
-    BaseClass for storage of chunks and datastore configuration.
 
-    A storage guarantees storage for a chunk.
-    Storage facility for loading and sa
-    """
-    def get(self, chunk):
-        """ Fill a chunk object with data. """
-        raise NotImplementedError
-
-    def put(self, chunk):
-        """ Save chunks data in the store. """
-        raise NotImplementedError
-
-    def delete(self, chunk):
-        """ Delete a chunk of data from store. """
-        raise NotImplementedError
-
-    def save(self, structure):
-        """ Store a structure object """
-        raise NotImplementedError
-
-    def load(self):
-        """ Return a structure object. """
-        raise NotImplementedError
-
-
-class FileStorage(object):
-
-    STRUCTURE_FILENAME = 'structure.pkl'
+class BaseFileStorage(object):
+    """ Set the path. """
     def __init__(self, path):
         self.path = path
-        self.structure_filepath = os.path.join(self.path, 
-                                               self.STRUCTURE_FILENAME)
-
-    def _save_safely(path, data)
-        """
-        Write data to disk in a safe way. Func should be the function
-        or method that returns the data.
-        """
-        timestamp = datetime.datetime.now().isoformat()
-        temppath = os.path.join(
-            self.path,
-            '.' + hashlib.md5(timestamp + path).hexdigest()
-        )
-        with open(temppath, 'wb') as tempfile:
-            tempfile.write(data)
-        # By using an atomic move / rename operation, there is no risk
-        # of reading corrupted data, only outdated data.
-        os.rename(tempfile, path)
-
-    def _chunk_path(chunk):
+    
+    def _chunk_path(self, chunk):
         """ Return a filepath for a chunk. """
         key = chunk.get_key()
         paths = [self.path]
@@ -67,32 +21,60 @@ class FileStorage(object):
         paths.append(key + '.cnk')
         return os.path.join(*paths)
 
-    def get(self, chunk):
-        """ Fill a chunk object with data. """
-        with open(self._chunk_path(chunk), 'rb') as chunkfile:
-            chunk.data = np.fromstring(
-                lz4.loads(chunkfile.read())),
-                dtype=chunk.dtype
-            )
-
-    def put(self, chunk):
-        """ 
-        Save chunks data in the store.
-        """
-        self._save_safely(
-            self._chunk_path(chunk),
-            chunk.data.tostring(),
+    def save(self, path, data):
+        """ Safe writing using a tempfile and then a move operation. """
+        # Create directory if necessary
+        try:
+            os.mkdirs(os.path.dirname(path)
+        except OSError:
+            pass
+        # Prepare temporary file using path and a timestamp
+        timestamp = datetime.datetime.now().isoformat()
+        temppath = os.path.join(
+            self.path,
+            '.' + hashlib.md5(timestamp + path).hexdigest()
         )
+        with open(temppath, 'wb') as tempfile:
+            tempfile.write(lz4.dumps(data))
+        # By using an atomic move / rename operation, there is no risk
+        # of reading corrupted data, only outdated data.
+        os.rename(tempfile, path)
 
-    def save(self, structure):
-        """
-        Store a structure object
-        """
-        self._save_safely(self.structure_filepath, picle.dumps(structure)
+    def load(self, path):
+        """ Get decompressed data """
+        with open(path, 'rb') as _file:
+            return lz4.loads(_file.read())
+            
+    def delete(self, path):
+        """ Removal """
+        # Remove the file
+        os.remove(path)
+        # Clean up the dirs
+        os.rmdirs(os.path.dirname(path))
 
-    def load(self):
-        """
-        return structure.
-        """
-        with open(self.structure_filepath, 'rb') as structure_file
-            return pickle.load(structure_file)
+
+class MetaFileStorage(BaseFileStorage):
+    EXTENSION = '.pkl'
+    def save(self, chunk):
+        path = self._chunk_path(chunk) + self.EXTENSION
+        data = pickle.dumps(chunk.meta)
+        super(self, MetaFileStorage).save(path, data)
+    
+    def load(self, chunk):
+        path = self._chunk_path(chunk) + self.EXTENSION
+        chunkdata = pickle.dumps(chunk.meta)
+        super(self, MetaFileStorage).put(path, data)
+
+class StructureFileStorage(BaseFileStorage):
+    EXTENSION = '.pkl'
+
+
+class DataFileStorage(BaseFileStorage):
+    EXTENSION = '.dat'
+        
+
+class FileStorage(object):
+    def __init__(self, path):
+        self.data = DataFileStorage(path)
+        self.meta = MetaFileStorage(path)
+        self.structure = StructureFileStorage(path)
