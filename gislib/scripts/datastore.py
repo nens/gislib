@@ -9,9 +9,12 @@ import argparse
 import logging
 
 from gislib.datastore import datastores
+from gislib.datastore import dimensions
+from gislib.datastore import storages
+from gislib.datastore import structures
 
 description = """
-    Commandline tool for working with nens/gislib datastores.
+Commandline tool for working with nens/gislib datastores.
 """
 
 logging.root.level = logging.DEBUG
@@ -31,7 +34,9 @@ def get_parser():
 
 def command(targetpath, sourcepaths):
     """ Do something spectacular. """
-    datastore = datastores.Datastore(targetpath)
+    storage = storages.FileStorage('targetpath')
+    #structure = None
+    datastore = datastores.Datastore(storage=storage)
     #datastore.add(sourcepaths)
 
 

@@ -5,9 +5,12 @@ def AbstractDimension(object):
     def __init__(self, **kwargs):
         """
         Handle dimension mapping to files and blocks
+
+        Non-equidistant dimensions must have at least one aggregator.
         """
         self.equidistant = kwargs.get(equidistant, True)
         self.aggregators = kwargs.get(aggregators, [])
+        self.offset = kwargs.get(offset, 0)
 
 
 class Dimension(object):

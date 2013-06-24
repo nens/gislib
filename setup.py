@@ -9,6 +9,7 @@ long_description = '\n\n'.join([
     ])
 
 install_requires = [
+    'lz4',
     'matplotlib',
     'Pillow',
     'scipy',

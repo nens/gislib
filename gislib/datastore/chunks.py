@@ -10,3 +10,10 @@ class Chunk(object):
         """
         Return chunks file object
         """
+
+    def get_superchunk(self, aggregator):
+        """ It depends on the aggregator which superchunk is returned.
+
+    def get_subchunks(self):
+
+
