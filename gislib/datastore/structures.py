@@ -12,8 +12,9 @@ class Structure(object):
     def __init__(self, dimensions, chunkshape, dtype):
         self.dimensions = dimensions
         self.chunkshape = chunkshape
-        self.dtype = dtype
+        self.dtype = dtype  # For now, a numpy string representation (can be stored in json)
+        self.nodatavalue = None  # This will be used to remove values from NED dimensions.
 
-    def 
+    def get_dtype
 
 
