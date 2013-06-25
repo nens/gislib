@@ -6,28 +6,34 @@ import hashlib
 import lz4
 import pickle
 
+"""
+storage.datastore.put(data)
+storage.chunkdata.put(chunk, data)
+storage.chunkmeta.put(chunk, meta)
+
+"""
+
 
 class BaseFileStorage(object):
-    """ Set the path. """
+    """ 
+    Base class for file storage. Handles the absolute path creation,
+    compression and atomic replacement of files.
+    """
     def __init__(self, path):
+        """ Set the path. """
         self.path = path
     
-    def _chunk_path(self, chunk):
-        """ Return a filepath for a chunk. """
-        key = chunk.get_key()
-        paths = [self.path]
-        # Add some directory structure
-        paths.extend([key[4 * i: 4 * i + 4] for i in range(8)])
-        paths.append(key + '.cnk')
-        return os.path.join(*paths)
 
-    def save(self, path, data):
-        """ Safe writing using a tempfile and then a move operation. """
+    def put(self, path, data):
+        """ Safe writing using tempfile and atomic move. """
+        path = self.make_path(chunk, extension)
+
         # Create directory if necessary
         try:
             os.mkdirs(os.path.dirname(path)
         except OSError:
             pass
+
         # Prepare temporary file using path and a timestamp
         timestamp = datetime.datetime.now().isoformat()
         temppath = os.path.join(
@@ -36,45 +42,69 @@ class BaseFileStorage(object):
         )
         with open(temppath, 'wb') as tempfile:
             tempfile.write(lz4.dumps(data))
+
         # By using an atomic move / rename operation, there is no risk
         # of reading corrupted data, only outdated data.
         os.rename(tempfile, path)
 
-    def load(self, path):
+    def get(self, path):
         """ Get decompressed data """
+        path = self.make_path(chunk, extension)
         with open(path, 'rb') as _file:
             return lz4.loads(_file.read())
             
-    def delete(self, path):
+    def delete(self, path, extension=None):
         """ Removal """
-        # Remove the file
+        path = self.make_path(chunk, extension)
         os.remove(path)
-        # Clean up the dirs
         os.rmdirs(os.path.dirname(path))
 
 
-class MetaFileStorage(BaseFileStorage):
-    EXTENSION = '.pkl'
-    def save(self, chunk):
-        path = self._chunk_path(chunk) + self.EXTENSION
-        data = pickle.dumps(chunk.meta)
-        super(self, MetaFileStorage).save(path, data)
+class ChunkFileStorage(BaseFileStorage):
+    """ Store chunk level data. """
+    def make_path(self, chunk):
+        """ Return a filepath for a chunk. """
+        key = chunk.get_key()
+        paths = [self.path]
+        # Add some directory structure
+        paths.extend([key[4 * i: 4 * i + 4] for i in range(8)])
+        paths.append(key + self.EXT)
+        return os.path.join(*paths)
+
+    def put(self, data, chunk=None):
+        super(self, ChunkFileStorage).put(data=data,
+                                          path=self.make_path(chunk))
     
-    def load(self, chunk):
-        path = self._chunk_path(chunk) + self.EXTENSION
-        chunkdata = pickle.dumps(chunk.meta)
-        super(self, MetaFileStorage).put(path, data)
+    def get(self, chunk=None):
+        return super(self, ChunkFileStorage).get(path=self.make_path(chunk))
 
-class StructureFileStorage(BaseFileStorage):
-    EXTENSION = '.pkl'
+    def delete(self, chunk=None):
+        super(self, ChunkFileStorage).delete(path=self.make_path(chunk))
 
 
-class DataFileStorage(BaseFileStorage):
-    EXTENSION = '.dat'
-        
+class StructureFileStorage(ChunkFileStorage):
+    """ Store data in a single file. """
+    FILENAME = 'structure'
+    def self.make_path(self, chunk=None):
+        return os.path.join(self.path, self.NAME)
+
+
+class MetaFileStorage(ChunkFileStorage):
+    """ Storage class for metadata. """
+    EXT = '.meta'
+
+
+class DataFileStorage(ChunkFileStorage):
+    """ Storage class for chunkdata. """
+    EXT = '.data'
+
 
 class FileStorage(object):
+    """ 
+    A container for various storages that together form the file storage.
+    """
     def __init__(self, path):
+        self.storage
         self.data = DataFileStorage(path)
         self.meta = MetaFileStorage(path)
         self.structure = StructureFileStorage(path)
