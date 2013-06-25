@@ -8,13 +8,10 @@ a datastore.
 The dimensions and data are interweaved, since NED dimensions need a
 dimension parameter in the basic datastructure.
 """
+
 class Structure(object):
-    def __init__(self, dimensions, chunkshape, dtype):
+    def __init__(self, dimensions, chunkshape, dtype, nodatavalue):
+        self.nodatavalue = nodatavalue  # Also used to identify NED removals.
         self.dimensions = dimensions
         self.chunkshape = chunkshape
-        self.dtype = dtype  # For now, a numpy string representation (can be stored in json)
-        self.nodatavalue = None  # This will be used to remove values from NED dimensions.
-
-    def get_dtype
-
-
+        self.dtype = dtype  # Any pickleable numpy dtype object will do.

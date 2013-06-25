@@ -2,29 +2,7 @@
 # (c) Nelen & Schuurmans.  GPL licensed, see LICENSE.rst.
 
 import hashlib
-
-"""
-So, it is a bit complex, but here's how it works. The storage has attributes
-We want to be able to
-chunk.data.put(data)  # puts location as well ((3,6), 2)
-chunk.data.get()
-chunk.meta.put(meta)
-chunk.meta.get()
-
-chunk can be instantiated from a file. In that case, the location must be unpickled.
-location must always be written when putting data.
-
-storage must be able to produce a single chunk? Na, then we need to import the chunks in the storages. Don't want to.
-
-When creating a chunk from the storage, we need to get the meta and the data for an arbitrary chunk from the storage. single chunk from the storage.
-
-Hey, what about separate storage for base chunks and aggregated chunks? Base chunks can easily be iterated over for copying, then. Maybe later.
-
-Store must be able to produce one or more tiles.
-
-Store produces locations; with a location a chunk can be instantiated. It must receive a storage as well. 
-
-"""
+import pickle
 
 
 class Data(object):
@@ -33,25 +11,35 @@ class Data(object):
         self.chunk = chunk
 
     def put(self, data):
-        """ Store data in storage. """
-        self.chunk.storage.data.put(self.chunk, data)
+        """ 
+        Store data in storage.
+        Here we make sure that location is written, too. And convert stuff.
+        """
+        self.chunk.storage.data.put(chunk=self.chunk, data=data)
+        self.chunk.storage.location.put(
+            chunk=self.chunk, 
+            data=pickle.dumps(self.chunk.location),
+        )
 
     def get(self):
         """ Get data from storage. """
-        self.chunk.storage.data.get(self.chunk)
+        return self.chunk.storage.data.get(self.chunk)
+
 
 class Meta(object):
     """ Uses the chunks storage to store and retrieve meta."""
     def __init__(self, chunk):
         self.chunk = chunk
 
-    def put(self, meta):
+    def put(self, data):
         """ Store meta in storage. """
-        self.chunk.storage.meta.put(self.chunk, meta)
+        self.chunk.storage.meta.put(
+            chunk=self.chunk,
+            data=pickle.dumps(data))
 
     def get(self):
         """ Get meta from storage. """
-        self.chunk.storage.meta.get(self.chunk)
+        return pickle.loads(self.chunk.storage.meta.get(chunk=self.chunk))
 
 
 class Chunk(object):

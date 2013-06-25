@@ -8,6 +8,8 @@ from __future__ import division
 import argparse
 import logging
 
+import numpy as np
+
 from gislib.datastore import datastores
 from gislib.datastore import dimensions
 from gislib.datastore import storages
@@ -34,8 +36,18 @@ def get_parser():
 
 def command(targetpath, sourcepaths):
     """ Do something spectacular. """
-    storage = storages.FileStorage('targetpath')
-    #structure = None
+    storage = storages.FileStorage(targetpath)
+    structure = structures.Structure(
+        dimensions=[
+            dimensions.SpatialDimension(projection=28992),
+            dimensions.TimeDimension(calendar='minutes since 200130401'),
+        ],
+        chunkshape=(256, 256, 1),
+        dtype='f4',
+        nodatavalue=np.finfo('f4').min,
+    )
+
+    #datastore = datastores.Datastore(storage=storage, structure=structure)
     datastore = datastores.Datastore(storage=storage)
     #datastore.add(sourcepaths)
 

@@ -4,33 +4,25 @@
 import datetime
 import hashlib
 import lz4
-import pickle
+import os
 
-"""
-storage.datastore.put(data)
-storage.chunkdata.put(chunk, data)
-storage.chunkmeta.put(chunk, meta)
-
-"""
-
-
+# ==============================================================================
+# File storage classes
+# ------------------------------------------------------------------------------
 class BaseFileStorage(object):
-    """ 
+    """
     Base class for file storage. Handles the absolute path creation,
     compression and atomic replacement of files.
     """
     def __init__(self, path):
         """ Set the path. """
         self.path = path
-    
 
     def put(self, path, data):
         """ Safe writing using tempfile and atomic move. """
-        path = self.make_path(chunk, extension)
-
         # Create directory if necessary
         try:
-            os.mkdirs(os.path.dirname(path)
+            os.makedirs(os.path.dirname(path))
         except OSError:
             pass
 
@@ -45,19 +37,17 @@ class BaseFileStorage(object):
 
         # By using an atomic move / rename operation, there is no risk
         # of reading corrupted data, only outdated data.
-        os.rename(tempfile, path)
+        os.rename(temppath, path)
 
     def get(self, path):
         """ Get decompressed data """
-        path = self.make_path(chunk, extension)
         with open(path, 'rb') as _file:
             return lz4.loads(_file.read())
-            
-    def delete(self, path, extension=None):
+
+    def delete(self, path):
         """ Removal """
-        path = self.make_path(chunk, extension)
         os.remove(path)
-        os.rmdirs(os.path.dirname(path))
+        os.removedirs(os.path.dirname(path))
 
 
 class ChunkFileStorage(BaseFileStorage):
@@ -72,24 +62,25 @@ class ChunkFileStorage(BaseFileStorage):
         return os.path.join(*paths)
 
     def put(self, data, chunk=None):
-        super(self, ChunkFileStorage).put(data=data,
+        super(ChunkFileStorage, self).put(data=data,
                                           path=self.make_path(chunk))
-    
+
     def get(self, chunk=None):
-        return super(self, ChunkFileStorage).get(path=self.make_path(chunk))
+        return super(ChunkFileStorage, self).get(path=self.make_path(chunk))
 
     def delete(self, chunk=None):
-        super(self, ChunkFileStorage).delete(path=self.make_path(chunk))
+        super(ChunkFileStorage, self).delete(path=self.make_path(chunk))
 
 
 class StructureFileStorage(ChunkFileStorage):
     """ Store data in a single file. """
     FILENAME = 'structure'
-    def self.make_path(self, chunk=None):
-        return os.path.join(self.path, self.NAME)
+
+    def make_path(self, chunk):
+        return os.path.join(self.path, self.FILENAME)
 
 
-class MetaFileStorage(ChunkFileStorage):
+class LocationFileStorage(ChunkFileStorage):
     """ Storage class for metadata. """
     EXT = '.meta'
 
@@ -99,12 +90,17 @@ class DataFileStorage(ChunkFileStorage):
     EXT = '.data'
 
 
+class MetaFileStorage(ChunkFileStorage):
+    """ Storage class for metadata. """
+    EXT = '.meta'
+
+
 class FileStorage(object):
-    """ 
+    """
     A container for various storages that together form the file storage.
     """
     def __init__(self, path):
-        self.storage
+        self.structure = StructureFileStorage(path)
+        self.location = LocationFileStorage(path)
         self.data = DataFileStorage(path)
         self.meta = MetaFileStorage(path)
-        self.structure = StructureFileStorage(path)

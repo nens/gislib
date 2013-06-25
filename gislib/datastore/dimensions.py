@@ -1,40 +1,42 @@
 # -*- coding: utf-8 -*-
 # (c) Nelen & Schuurmans.  GPL licensed, see LICENSE.rst.
 
-def AbstractDimension(object):
+
+
+class BaseDimension(object):
     def __init__(self, **kwargs):
         """
         Handle dimension mapping to files and blocks
 
         Non-equidistant dimensions must have at least one aggregator.
         """
-        self.equidistant = kwargs.get(equidistant, True)
-        self.aggregators = kwargs.get(aggregators, [])
-        self.offset = kwargs.get(offset, 0)
+        self.equidistant = kwargs.get('equidistant', True)
+        self.aggregators = kwargs.get('aggregators', [])
+        self.offset = kwargs.get('offset', 0)
 
 
-class Dimension(object):
+class UnitDimension(BaseDimension):
     """
     Base for all dimension classes
     """
     def __init__(self, unit, **kwargs):
         self.unit = unit
-        super(self, Dimension).__init__(**kwargs)
+        super(UnitDimension, self).__init__(**kwargs)
         
 
-class TimeDimension(Dimension):
+class TimeDimension(BaseDimension):
     """ 
     Dimension with coards calender units.
     """
-    def __init__(self, calendar):
+    def __init__(self, calendar, **kwargs):
         self.calendar = calendar
-        super(self, TimeDimension).__init__(**kwargs)
+        super(TimeDimension, self).__init__(**kwargs)
 
 
-class SpatialDimension(Dimension):
+class SpatialDimension(BaseDimension):
     """
     Dimension with projection units, suitable for gdal reprojection.
     """
-    def __init__(self, unit):
+    def __init__(self, projection, **kwargs):
         self.projection = projection
-        super(self, SpatialDimension).__init__(**kwargs)
+        super(SpatialDimension, self).__init__(**kwargs)

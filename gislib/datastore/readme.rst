@@ -1,13 +1,53 @@
 Datastore for gridded data
 ==========================
 
+What's next?
+- gdal dataset to extent filters, requiring values for new dimensions.
+- Extent => locations => filters
+- Warpers per 
+- Build filters for adding data:
+    - filter: extent for a dataset
+    - datastore: chunks for extent
+    - datastore: adapter for dataset to chunk
+    - extent to chunks
+    - chunk to extents
+    - smart adapter that buffers arbitrary amount of data in memory until writing to arbitrary amount of chunks.
+    - gdal dataset in, chunkiterator out.
+    - build auto aggregation
+    - build chunk iterators:
+        - all chunks
+        - extent based chunks
+
+    - build masterchunkfinder, meaningfulchunkiterator b
+    - 
+
+- Adding some equidistant data from multiple sources
+    - Use multiprocessing
+    - Do simple aggregation (no warping pleaz)
+    - How to determine the extents of the data?
+- Extracting some equidistant data
+- Dealing with the requests of 
+
+Filters
+-------
+Convert source data to chunkdata and vice versa. The datastore delivers the correct chunks based on the souces, and the filter takes care of filling the chunks, or reading the chunks.
+
 Chunks
 ------
-A chunk contains data, metadata and a location in the multidimensional space of a datastore.
+A chunk contains data, metadata and a location in the multidimensional space of a datastore. Using file storage, data, metadata and location are separately stored.
 
 Datastore
 ---------
 A datastore is a collection of chunks in a multidimensional space.
+The Structure defines the datastores properties. With a structure, we can predict what chunks can be found where, if they exist; even different aggregations.
+- Get an arbitrary chunk from the storage
+- Determine it's location
+- Find the masterchunk
+- Guide an add operation. Before the add, we have the master chunk. After add, there may be a new master which must contain the masters of the new and the old data.
+
+Structure
+---------
+A structure knows the dimensions of the dataset. It can convert locations to extents and vice versa.
 
 Aggregators
 -----------
@@ -19,6 +59,9 @@ Retrievers
 For a ned dimension, just grab anything in the extent and clip.
 For a ed dimension, grab anything in the extent and resample according to call.
 
+Storage of structure and location
+---------------------------------
+Location gets pickled by chunk when stored, but unpickled by who? The datastore?
 
 NED dimensions have some special properties:
 
@@ -81,12 +124,21 @@ This would be nice:
     datastore.add_data
     datastore.iterchunks(extent)
 
-    chunk.meta.get()
     chunk.data.get()
+    chunk.data.put()
+    chunk.meta.get()
+    chunk.meta.put()
+    chunk.location.put()
+    chunk.location.
+    chunk.parent(dimension)
+    chunk.children(dimension)
+    chunk.
+
     chunk.data.put()
 
 
 - A chunk must now its siblings(?), parent and children.
+- 
 
     
 
@@ -97,5 +149,25 @@ But what about the aggregations?
 Create converter: gdal2chunks: structure
 
 
+Attach storage to chunk directly after unpickling. Remove storage from chunk object before pickling.Easy.
 
-"""
+
+
+
+Initialization:
+    Existing storage: no structure allowed!
+    New storage: structure must be supplied.
+
+
+
+
+storage must be able to produce a single chunk? Na, then we need to import the chunks in the storages. Don't want to.
+
+When creating a chunk from the storage, we need to get the meta and the data for an arbitrary chunk from the storage. single chunk from the storage.
+
+Hey, what about separate storage for base chunks and aggregated chunks? Base chunks can easily be iterated over for copying, then. Maybe later.
+
+Store must be able to produce one or more tiles.
+
+Store produces locations; with a location a chunk can be instantiated. It must receive a storage as well. 
+
