@@ -53,7 +53,6 @@ def command(targetpath, sourcepaths):
     except OSError:
         pass
     datastore = datastores.Datastore(storage=storage, structure=structure)
-    #datastore.add(sourcepaths)
 
 
 def main():

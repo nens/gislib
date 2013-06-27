@@ -148,6 +148,7 @@ class Pyramid(AbstractGeoContainer):
         """
         Get tiles corresponding to a geometry in 
         """
+        pass
         
     
     
@@ -194,7 +195,7 @@ class Pyramid(AbstractGeoContainer):
                 source_projection=dataset.GetProjection(),
                 target_projection=self.projection,
             )
-            tiles = self._tiles(
+            tiles = self._tiles()
             # - transformed extent => tiles in projection unit
             # - transformed cellsize => zoomlevel in projection unit
             # - which tiles then?

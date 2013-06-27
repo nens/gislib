@@ -22,7 +22,7 @@ class Datastore(object):
     coupled x y
     """
 
-    STRUCTURE_KEY = 'structure'
+    STRUCTURE = 'structure'
 
     def __init__(self, storage, structure=None):
         """ initialize. """
@@ -30,17 +30,28 @@ class Datastore(object):
 
         if structure is None:
             self.structure = pickle.loads(
-                self.storage.common[self.STRUCTURE_KEY],
+                self.storage.common[self.STRUCTURE],
             )
         else:
             self.verify_not_initialized()
-            self.storage.common[self.STRUCTURE_KEY] = pickle.dumps(structure)
+            self.storage.common[self.STRUCTURE] = pickle.dumps(structure)
             self.structure = structure
+
+        chunk1 = chunks.Chunk(storage=self.storage, location='onzin')
+        chunk1['data'] = 'de data'
+        chunk2 = chunks.Chunk(storage=self.storage, location='aaaaaa')
+        chunk2['data'] = 'de data2'
+        chunk = chunks.Chunk.first(storage=self.storage)
+        print(chunk['data'])
+        chunk1['data'] = None
+        chunk2['data'] = None
+
+
 
     def verify_not_initialized(self):
         """ If the datastore already has a structure, raise an exception. """
         try:
-            self.storage.common['structure']
-        except IndexError:
+            self.storage.common[self.STRUCTURE]
+        except KeyError:
             return  # That's expected.
         raise IOError('Datastore already has a structure!')

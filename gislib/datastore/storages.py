@@ -54,6 +54,9 @@ class BaseFileStorage(object):
 
 class ChunkFileStorage(BaseFileStorage):
     """ Store chunk level data. """
+
+    NAME = 'chunks'
+
     def split_key(self, key, size=4, count=4):
         """ Split a key in directory parts and a file part. """
         total = size * count
@@ -70,7 +73,7 @@ class ChunkFileStorage(BaseFileStorage):
 
         The last part is also the filename.
         """
-        paths = [self.path, 'chunks', name]
+        paths = [self.path, self.NAME, name]
         paths.extend(self.split_key(chunk.key))
         return os.path.join(*paths)
 
@@ -89,8 +92,11 @@ class ChunkFileStorage(BaseFileStorage):
 
 class CommonFileStorage(BaseFileStorage):
     """ Store datastore common data. """
+
+    NAME = 'common'
+
     def make_path(self, name):
-        return os.path.join(self.path, 'common', name)
+        return os.path.join(self.path, self.NAME, name)
 
     def __getitem__(self, name):
         """ Get read a common value. """
@@ -98,7 +104,7 @@ class CommonFileStorage(BaseFileStorage):
         try:
             return super(CommonFileStorage, self).get(path=path)
         except IOError:
-            raise IndexError(name)
+            raise KeyError(name)
 
     def __setitem__(self, name, data):
         path = self.make_path(name=name)
@@ -114,5 +120,14 @@ class FileStorage(object):
     A container for various storages that together form the file storage.
     """
     def __init__(self, path):
+        self.path = path
+        self.base = BaseFileStorage(path)
         self.common = CommonFileStorage(path)
         self.chunks = ChunkFileStorage(path)
+
+    def first(self, name):
+        """ Return named data of arbitrary chunk. """
+        path = os.path.join(self.path, self.chunks.NAME, name)
+        for basedir, dirnames, filenames in os.walk(path):
+            if filenames:
+                return self.base.get(os.path.join(basedir, filenames[0]))

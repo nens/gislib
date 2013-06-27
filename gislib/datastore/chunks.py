@@ -9,11 +9,14 @@ class Chunk(object):
     """
     A chunk of data stored with compression.
     """
+    DATA = 'data'
+    META = 'meta'
+    LOCATION = 'location'
 
     @classmethod
     def first(cls, storage):
         """ Return an arbitrary chunk from storage. """
-        location = pickle.loads(storage.location.first())
+        location = pickle.loads(storage.first(name=cls.LOCATION))
         return cls(storage=storage, location=location)
 
     def __init__(self, storage, location):
@@ -23,15 +26,24 @@ class Chunk(object):
 
     def __getitem__(self, name):
         """ Get data for this chunk. """
-        return self.storage.chunks.get(chunk=self, name=name)
+        try:
+            return self.storage.chunks.get(chunk=self, name=name)
+        except IOError:
+            raise KeyError(name, chunk.key)
 
     def __setitem__(self, name, data):
         """ Set or delete data for this chunk. """
-        # Delete
         if data is None:
-            return self.storage.chunks.delete(chunk=self, name=name)
-        # Write
-        self.storage.chunks.put(chunk=self, name=name, data=data)
+            # Delete
+            self.storage.chunks.delete(chunk=self, name=name)
+            if name == self.DATA:
+                self[self.LOCATION] = None
+        else:
+            # Put
+            self.storage.chunks.put(chunk=self, name=name, data=data)
+            if name == self.DATA:
+                self[self.LOCATION] = pickle.dumps(self.location)
+        
 
     def get_parent(self, dimension=None, aggregator=None):
         """
