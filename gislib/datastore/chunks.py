@@ -5,55 +5,36 @@ import hashlib
 import pickle
 
 
-class Data(object):
-    """ Uses the chunks storage to store and retrieve data."""
-    def __init__(self, chunk):
-        self.chunk = chunk
-
-    def put(self, data):
-        """ 
-        Store data in storage.
-        Here we make sure that location is written, too. And convert stuff.
-        """
-        self.chunk.storage.data.put(chunk=self.chunk, data=data)
-        self.chunk.storage.location.put(
-            chunk=self.chunk, 
-            data=pickle.dumps(self.chunk.location),
-        )
-
-    def get(self):
-        """ Get data from storage. """
-        return self.chunk.storage.data.get(self.chunk)
-
-
-class Meta(object):
-    """ Uses the chunks storage to store and retrieve meta."""
-    def __init__(self, chunk):
-        self.chunk = chunk
-
-    def put(self, data):
-        """ Store meta in storage. """
-        self.chunk.storage.meta.put(
-            chunk=self.chunk,
-            data=pickle.dumps(data))
-
-    def get(self):
-        """ Get meta from storage. """
-        return pickle.loads(self.chunk.storage.meta.get(chunk=self.chunk))
-
-
 class Chunk(object):
     """
     A chunk of data stored with compression.
     """
+
+    @classmethod
+    def first(cls, storage):
+        """ Return an arbitrary chunk from storage. """
+        location = pickle.loads(storage.location.first())
+        return cls(storage=storage, location=location)
+
     def __init__(self, storage, location):
         self.location = location
         self.storage = storage
-        self.data = Data(self)
-        self.meta = Meta(self)
+        self.key = hashlib.md5(str(self.location)).hexdigest()
+
+    def __getitem__(self, name):
+        """ Get data for this chunk. """
+        return self.storage.chunks.get(chunk=self, name=name)
+
+    def __setitem__(self, name, data):
+        """ Set or delete data for this chunk. """
+        # Delete
+        if data is None:
+            return self.storage.chunks.delete(chunk=self, name=name)
+        # Write
+        self.storage.chunks.put(chunk=self, name=name, data=data)
 
     def get_parent(self, dimension=None, aggregator=None):
-        """ 
+        """
         It depends on the dimension and the aggregator which superchunk
         is returned.
         """
@@ -70,4 +51,3 @@ class Chunk(object):
 
         The string can be used to identify the chunk in the storage.
         """
-        return hashlib.md5(str(self.location)).hexdigest()

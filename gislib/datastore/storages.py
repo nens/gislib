@@ -5,10 +5,12 @@ import datetime
 import hashlib
 import lz4
 import os
+import textwrap
 
-# ==============================================================================
+
+# =============================================================================
 # File storage classes
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 class BaseFileStorage(object):
     """
     Base class for file storage. Handles the absolute path creation,
@@ -52,47 +54,59 @@ class BaseFileStorage(object):
 
 class ChunkFileStorage(BaseFileStorage):
     """ Store chunk level data. """
-    def make_path(self, chunk):
-        """ Return a filepath for a chunk. """
-        key = chunk.get_key()
-        paths = [self.path]
-        # Add some directory structure
-        paths.extend([key[4 * i: 4 * i + 4] for i in range(8)])
-        paths.append(key + self.EXT)
+    def split_key(self, key, size=4, count=4):
+        """ Split a key in directory parts and a file part. """
+        total = size * count
+        return textwrap.wrap(key[:total], size) + [key[total:]]
+
+    def make_path(self, name, chunk):
+        """
+        Return a filepath for a chunk.
+
+        The path consists of:
+        - Fixed part indicating chunk data
+        - Variable part based on name
+        - Variable parts based on chunk key
+
+        The last part is also the filename.
+        """
+        paths = [self.path, 'chunks', name]
+        paths.extend(self.split_key(chunk.key))
         return os.path.join(*paths)
 
-    def put(self, data, chunk=None):
-        super(ChunkFileStorage, self).put(data=data,
-                                          path=self.make_path(chunk))
+    def put(self, name, chunk, data):
+        path = self.make_path(name=name, chunk=chunk)
+        super(ChunkFileStorage, self).put(path=path, data=data)
 
-    def get(self, chunk=None):
-        return super(ChunkFileStorage, self).get(path=self.make_path(chunk))
+    def get(self, name, chunk):
+        path = self.make_path(name=name, chunk=chunk)
+        return super(ChunkFileStorage, self).get(path=path)
 
-    def delete(self, chunk=None):
-        super(ChunkFileStorage, self).delete(path=self.make_path(chunk))
-
-
-class StructureFileStorage(ChunkFileStorage):
-    """ Store data in a single file. """
-    FILENAME = 'structure'
-
-    def make_path(self, chunk):
-        return os.path.join(self.path, self.FILENAME)
+    def delete(self, name, chunk):
+        path = self.make_path(name=name, chunk=chunk)
+        return super(ChunkFileStorage, self).delete(path=path)
 
 
-class LocationFileStorage(ChunkFileStorage):
-    """ Storage class for metadata. """
-    EXT = '.meta'
+class CommonFileStorage(BaseFileStorage):
+    """ Store datastore common data. """
+    def make_path(self, name):
+        return os.path.join(self.path, 'common', name)
 
+    def __getitem__(self, name):
+        """ Get read a common value. """
+        path = self.make_path(name=name)
+        try:
+            return super(CommonFileStorage, self).get(path=path)
+        except IOError:
+            raise IndexError(name)
 
-class DataFileStorage(ChunkFileStorage):
-    """ Storage class for chunkdata. """
-    EXT = '.data'
-
-
-class MetaFileStorage(ChunkFileStorage):
-    """ Storage class for metadata. """
-    EXT = '.meta'
+    def __setitem__(self, name, data):
+        path = self.make_path(name=name)
+        # Delete
+        if data is None:
+            return super(CommonFileStorage, self).delete(path=path)
+        # Write
+        super(CommonFileStorage, self).put(path=path, data=data)
 
 
 class FileStorage(object):
@@ -100,7 +114,5 @@ class FileStorage(object):
     A container for various storages that together form the file storage.
     """
     def __init__(self, path):
-        self.structure = StructureFileStorage(path)
-        self.location = LocationFileStorage(path)
-        self.data = DataFileStorage(path)
-        self.meta = MetaFileStorage(path)
+        self.common = CommonFileStorage(path)
+        self.chunks = ChunkFileStorage(path)

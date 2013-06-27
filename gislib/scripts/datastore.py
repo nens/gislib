@@ -7,6 +7,7 @@ from __future__ import division
 
 import argparse
 import logging
+import shutil
 
 import numpy as np
 
@@ -47,8 +48,11 @@ def command(targetpath, sourcepaths):
         nodatavalue=np.finfo('f4').min,
     )
 
-    #datastore = datastores.Datastore(storage=storage, structure=structure)
-    datastore = datastores.Datastore(storage=storage)
+    try:
+        shutil.rmtree(targetpath)
+    except OSError:
+        pass
+    datastore = datastores.Datastore(storage=storage, structure=structure)
     #datastore.add(sourcepaths)
 
 
