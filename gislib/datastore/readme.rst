@@ -1,71 +1,66 @@
 Datastore for gridded data
 ==========================
 
-What's next?
-- gdal dataset to extent filters, requiring values for new dimensions.
-- Extent => locations => filters
-- Warpers per 
-- Build filters for adding data:
-    - filter: extent for a dataset
-    - datastore: chunks for extent
-    - datastore: adapter for dataset to chunk
-    - extent to chunks
-    - chunk to extents
-    - smart adapter that buffers arbitrary amount of data in memory until writing to arbitrary amount of chunks.
-    - gdal dataset in, chunkiterator out.
-    - build auto aggregation
-    - build chunk iterators:
-        - all chunks
-        - extent based chunks
+Chunk updating system
+---------------------
 
-    - build masterchunkfinder, meaningfulchunkiterator b
-    - 
+Chunks have a unique location that maps one-to-one with an extent. However
+data sources and targets have extents and datastructures, but they don't
+(necessarily) map onto the chunk extents. Therefore, algorithms are
+needed to translate source and target datasets to and from chunks.
 
-- Adding some equidistant data from multiple sources
-    - Use multiprocessing
-    - Do simple aggregation (no warping pleaz)
-    - How to determine the extents of the data?
-- Extracting some equidistant data
-- Dealing with the requests of 
+We also need adapters to convert things like gdal datasets to the
+datastore structure. It would be nice to predict the chunks that will
+be updated from a complete set of datasources, in order to divide the
+jobs between processes.
 
-Filters
--------
-Convert source data to chunkdata and vice versa. The datastore delivers the correct chunks based on the souces, and the filter takes care of filling the chunks, or reading the chunks.
+Aggregation system
+------------------
 
-Chunks
-------
-A chunk contains data, metadata and a location in the multidimensional space of a datastore. Using file storage, data, metadata and location are separately stored.
+Chunks that have been written must be automatically added to a
+set of updated chunks. Their parents have to be updated too, use
+multiprocessing. The aggregations use predefined algorithms according
+to the datastore structure. Only when we aggregate aggregated
+dimensions(Highly complex stuff?) There can be a master chunk that
+contains the full datastore extent. Otherwise, it has to be constructed
+from the last aggregation from each aggregation.
 
-Datastore
----------
-A datastore is a collection of chunks in a multidimensional space.
-The Structure defines the datastores properties. With a structure, we can predict what chunks can be found where, if they exist; even different aggregations.
-- Get an arbitrary chunk from the storage
-- Determine it's location
-- Find the masterchunk
-- Guide an add operation. Before the add, we have the master chunk. After add, there may be a new master which must contain the masters of the new and the old data.
+Requirements
+------------
+
+Datastore (?) can translate chunk location to extent Datastore (?) can
+translate extent to chunk(location)generator Note that when updating, we
+need to keep track of the orginal extent, because the last aggregations
+must include the original data.
+
+Masterchunkfinder based on datastore.first()
+Meaningful chunkfinder
+Chunks parents and children finders.
+
 
 Structure
 ---------
-A structure knows the dimensions of the dataset. It can convert locations to extents and vice versa.
+A structure knows the dimensions of the dataset. It can convert locations
+to extents and vice versa.
 
 Aggregators
 -----------
-Take care of the aggregation of data in a dimension from chunks with more detail to chunks with less detail.
+Take care of the aggregation of data in a dimension from chunks with
+more detail to chunks with less detail.
 Resampling, simplification, etc.
 
-Retrievers
-----------
+Retrievers and ned dimensions
+-----------------------------
 For a ned dimension, just grab anything in the extent and clip.
 For a ed dimension, grab anything in the extent and resample according to call.
 
-Storage of structure and location
----------------------------------
-Location gets pickled by chunk when stored, but unpickled by who? The datastore?
-
 NED dimensions have some special properties:
 
-- A default zoomlevel for the first point (when there is one point, it is not clear at which zoom to put it. As soon there is a second point, the zoom is settled and the original zoom can be cleared. Or should the default just be zoom '0'? What about the precision of the parameter then? However, usually, more than one value will soon be there.
+- A default zoomlevel for the first point (when there is one point, it
+is not clear at which zoom to put it. As soon there is a second point,
+the zoom is settled and the original zoom can be cleared. Or should
+the default just be zoom '0'? What about the precision of the parameter
+then? However, usually, more than one value will soon be there.
 
 Some design considerations: - A non-equidistant dataset stores a range
 in the dimension of a chunk, and a single precision parameter that
@@ -82,7 +77,8 @@ show the latest results.
 
 - NED dimensions can only add data to the chunks with the highest
 resolution. To be consistent, ED chunks also accept only data at
-their lowest resolution. So we can guarantee consistency and prevent
+their lowest resolution, otherwise raise an exception 'Trying to put data at an aggregated level for dimension ....'
+So we can guarantee consistency and prevent
 dataloss. That means the user has to explicitly clear a datastore
 if he wants to add lowres stuff, by filling with nodata at the lower
 resolution and running a clean operation on the whole store. Expensive,
@@ -93,13 +89,6 @@ tweaking. Simply create another datastore and update this datastore with
 it whenever possible. But a datastore does try to update with very high
 performance, using multiprocessing and in-memory merged chunks whenever
 possible.
-
-A datastore has a method to 
-- find first arbitrary chunk
-
-- find the toplevel extent from chunk, by grabbing an arbitrary chunk
-and walking to the top of the aggregation pyramid. So, aggregation must
-be compulsory then? At least, from a chunk in the datastore we must be able to infer it's chunk extent. Therefore we must save the chunk extent with the chunk data. Let's do that using (c)Pickle.
 
 - Let's say we don't do multidimensional aggregations. How then to find the extent of a non-aggregating dimension? No, we have to aggregate them, or keep track of the extent via the storage; but that would imply some index. No. Let's say, we don't do multidimensional aggregations, but always do aggregation in any dimension. Or do we do single block dimensions? Makes stuf complex.
 
@@ -124,50 +113,12 @@ This would be nice:
     datastore.add_data
     datastore.iterchunks(extent)
 
-    chunk.data.get()
-    chunk.data.put()
-    chunk.meta.get()
-    chunk.meta.put()
-    chunk.location.put()
-    chunk.location.
     chunk.parent(dimension)
     chunk.children(dimension)
-    chunk.
-
-    chunk.data.put()
 
 
-- A chunk must now its siblings(?), parent and children.
-- 
+Arbitrary source datasets => generator for datasets (we need an
+object!) in the storage structure => Generator for chunklevel data.
 
-    
-
-But what about the aggregations?
-
-
-
-Create converter: gdal2chunks: structure
-
-
-Attach storage to chunk directly after unpickling. Remove storage from chunk object before pickling.Easy.
-
-
-
-
-Initialization:
-    Existing storage: no structure allowed!
-    New storage: structure must be supplied.
-
-
-
-
-storage must be able to produce a single chunk? Na, then we need to import the chunks in the storages. Don't want to.
-
-When creating a chunk from the storage, we need to get the meta and the data for an arbitrary chunk from the storage. single chunk from the storage.
-
-Hey, what about separate storage for base chunks and aggregated chunks? Base chunks can easily be iterated over for copying, then. Maybe later.
-
-Store must be able to produce one or more tiles.
-
-Store produces locations; with a location a chunk can be instantiated. It must receive a storage as well. 
-
+When a chunk is created at a lower level, one always need to put the
+higher level data into it. This holds for both ned and ed.
