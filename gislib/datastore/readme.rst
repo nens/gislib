@@ -1,6 +1,25 @@
 Datastore for gridded data
 ==========================
 
+Need to keep track of some stuf during updating:
+- Aggregated chunks must not be updated directly, only via aggregations.
+
+- Chunks at higher zoom must first copy lower zoom ancestor data before
+becoming the bottom data.
+
+- Need to check if current toplevel chunk is updated, or else aggregation
+must continue until a new toplevel chunk is found.
+
+- When aggregating: First aggregate the chunks with highest zoom. Done.
+
+How fast is it to find the top chunk?
+The optimal chunks for reading a certain extent / zoom?
+The realdata chunks?
+
+Must any request start with determining the toplevel chunk? How fast is
+that? But otherwise we won't notice the differences. And that would be
+bad, too.
+
 Chunk updating system
 ---------------------
 
