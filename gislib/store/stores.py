@@ -8,12 +8,12 @@ from __future__ import division
 
 import pickle
 
-from gislib.datastore import aggregators
-from gislib.datastore import chunks
-from gislib.datastore import dimensions
-from gislib.datastore import utils
+from gislib.store import aggregators
+from gislib.store import chunks
+from gislib.store import dimensions
+from gislib.store import utils
 
-class Datastore(object):
+class Store(object):
     """
     Raster object with optional arguments including
     time. Choices to be made:
@@ -42,21 +42,11 @@ class Datastore(object):
             self.storage.common[self.STRUCTURE] = pickle.dumps(structure)
             self.structure = structure
 
-        chunk1 = chunks.Chunk(storage=self.storage, location='onzin')
-        chunk1['data'] = 'de data'
-        chunk2 = chunks.Chunk(storage=self.storage, location='aaaaaa')
-        chunk2['data'] = 'de data2'
-        chunk = chunks.Chunk.first(storage=self.storage)
-        print(chunk['data'])
-        chunk1['data'] = None
-        chunk2['data'] = None
-
-
 
     def verify_not_initialized(self):
-        """ If the datastore already has a structure, raise an exception. """
+        """ If the store already has a structure, raise an exception. """
         try:
             self.storage.common[self.STRUCTURE]
         except KeyError:
             return  # That's expected.
-        raise IOError('Datastore already has a structure!')
+        raise IOError('Store already has a structure!')

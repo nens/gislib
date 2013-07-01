@@ -12,13 +12,14 @@ import shutil
 
 import numpy as np
 
-from gislib.datastore import datastores
-from gislib.datastore import dimensions
-from gislib.datastore import storages
-from gislib.datastore import structures
+from gislib.store import chunks
+from gislib.store import dimensions
+from gislib.store import storages
+from gislib.store import stores
+from gislib.store import structures
 
 description = """
-Commandline tool for working with nens/gislib datastores.
+Commandline tool for working with nens/gislib stores.
 """
 
 logging.root.level = logging.DEBUG
@@ -47,28 +48,36 @@ def command(targetpath, sourcepaths):
         dtype='f4',
         nodatavalue=np.finfo('f4').min,
     )
-    location = (
-        dimensions.Location(level=0, indices=(0, 0)),
-        dimensions.Location(level=0, indices=(0,)),
-    )
-    print(structure.get_extent(location))
-    locations = structure.get_locations(
-        structure.get_extent(location),
-        resolution=(513, 1),
-    )
-    for c, l in enumerate(locations):
-        print(l)
-        if c > 20:
-            break
-    exit()
 
     try:
         shutil.rmtree(targetpath)
     except OSError:
         pass
-    datastore = datastores.Datastore(storage=storage, structure=structure)
 
-    
+    store = stores.Store(storage=storage, structure=structure)
+    location = (
+        dimensions.Location(level=1, indices=(1, 1)),
+        dimensions.Location(level=1, indices=(1,)),
+    )
+    chunk = chunks.Chunk(location=location, store=store)
+    ori = chunk
+    for i in range(100):
+        chunk = chunk.get_parent()
+        chunk[chunks.Chunk.DATA] = str(i)
+    master = chunk.get_parent(1)
+    master[chunks.Chunk.DATA] = 'master'
+
+    print(ori)
+    ori['data'] = 'this'
+    import datetime
+    start = datetime.datetime.now()
+    root = ori.get_root()
+    print(datetime.datetime.now() - start)
+    print(ori.get_root()['data'])
+
+
+
+
 
 
 def main():

@@ -3,11 +3,8 @@ Datastore for gridded data
 
 Todo
 ----
-- Create location2extent & extent2location
 - Create chunk.getroot()
 - Create chunk.getneighbours()
-- Create chunk.getparent()
-- Create chunk.getchildren()
 
 - 
 - Create chunkupdater that generates updated chunks.

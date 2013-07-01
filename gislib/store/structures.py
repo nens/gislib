@@ -26,23 +26,48 @@ class Structure(object):
         self.dimensions = dimensions
         self.dtype = dtype  # Any pickleable numpy dtype object will do.
 
+
     def get_locations(self, extent, resolution):
         """
         Return a generator of location tuples.
         """
+        # Coerce resolutions to levels
+        level = tuple(d.get_level(r)
+                      for d, r in zip(self.dimensions, resolution))
+
+        # Get the funcs that return the per-dimension location generators
+        funcs = (d.get_locations(e, l)
+                 for d, e, l in zip(self.dimensions, extent, level))
+
+        # Nest via reduce function.
         def reducer(f1, f2):
             return lambda: (tuple([i]) + tuple([j]) 
                             for j in f2() for i in f1())
-        
-        funcs = (d.get_locations(e, r)
-                 for d, e, r in zip(self.dimensions, extent, resolution))
 
         return reduce(reducer, funcs)()
 
 
     def get_extent(self, location):
-        """
-        Return the extent of a chunk at location
-        """
+        """ Return the extent of a chunk at location. """
         return tuple(dimension.get_extent(level)
                      for dimension, level in zip(self.dimensions, location))
+
+    def get_parent_location(self, location, dimension, levels):
+        """ Return a location. """
+        level = location[dimension].level + levels
+        extent = self.get_extent(location)[dimension]
+        insert = self.dimensions[dimension].get_locations(
+            extent=extent, level=level,
+        )().next(),
+        return location[:dimension] + insert + location[dimension + 1:]
+
+
+    def get_child_locations(self, location, dimension):
+        """ Return a location generator. """
+        level = location[dimension].level - 1
+        extent = self.get_extent(location)[dimension]
+        inserts = self.dimensions[dimension].get_locations(
+            extent=extent, level=level,
+        )()
+        for insert in inserts:
+            yield location[:dimension] + (insert, ) + location[dimension + 1:]

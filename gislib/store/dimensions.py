@@ -24,6 +24,10 @@ class BaseDimension(object):
         self.aggregators = kwargs.get('aggregators', [])
         self.offset = kwargs.get('offset', 0)
 
+    def get_level(self, resolution):
+        """ Return chunk level. """
+        return math.floor(math.log(self.size / resolution, 2))
+
     def get_extent(self, location):
         """ 
         Return extent tuple for a location.
@@ -35,7 +39,7 @@ class BaseDimension(object):
                            for i in location.indices)
                      for j in (0, 1))
 
-    def get_locations(self, extent, resolution):
+    def get_locations(self, extent, level):
         """ 
         Return a function that, when called, returns a generator of locations.
 
@@ -45,29 +49,23 @@ class BaseDimension(object):
         If resolution does not exactly match, locations for the next
         matching higher resolutions are returned.
         """
-        # Determine level for resolution using size
-        level = math.floor(math.log(self.size / resolution, 2))
-        
-        # Determine range of indices 
-        def _index(tile):
-            """ Return the second xrange argument. """
-            ceil = math.ceil(tile)
-            return int(ceil)
-            return int(ceil) if ceil == tile else int(ceil)
 
+        # Determine the chunk index ranges for this dimension
         levelsize = 2 ** level * self.size
         irange = map(
             xrange,
             (int(math.floor(e / levelsize)) for e in extent[0]),
-            (_index(e / levelsize) for e in extent[1]),
+            (int(math.ceil(e / levelsize)) for e in extent[1]),
         )
         
-        # Make a list of functions that return generators of indices
+        # Prepare for reduce by creating a list of functions
         funcs = [lambda: ((i, ) for i in r) for r in irange]
 
         # Reduce by nesting the generators, combine with level and return again a function.
         def reducer(f1, f2):
             return lambda: (i + j for j in f2() for i in f1())
+
+        # Combine the (sub)dimensions and return a function
         return lambda: (Location(level=level, indices=indices) 
                         for indices in reduce(reducer, funcs)())
 
