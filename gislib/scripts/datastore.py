@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# (c) Nelen & Schuurmans.  GPL licensed, see LICENSE.rst.
 
 from __future__ import print_function
 from __future__ import unicode_literals
@@ -40,19 +41,34 @@ def command(targetpath, sourcepaths):
     storage = storages.FileStorage(targetpath)
     structure = structures.Structure(
         dimensions=[
-            dimensions.SpatialDimension(projection=28992),
-            dimensions.TimeDimension(calendar='minutes since 200130401'),
+            dimensions.SpatialDimension(projection=28992, size=256),
+            dimensions.TimeDimension(calendar='minutes since 200130401', size=1),
         ],
-        chunkshape=(256, 256, 1),
         dtype='f4',
         nodatavalue=np.finfo('f4').min,
     )
+    location = (
+        dimensions.Location(level=0, indices=(0, 0)),
+        dimensions.Location(level=0, indices=(0,)),
+    )
+    print(structure.get_extent(location))
+    locations = structure.get_locations(
+        structure.get_extent(location),
+        resolution=(513, 1),
+    )
+    for c, l in enumerate(locations):
+        print(l)
+        if c > 20:
+            break
+    exit()
 
     try:
         shutil.rmtree(targetpath)
     except OSError:
         pass
     datastore = datastores.Datastore(storage=storage, structure=structure)
+
+    
 
 
 def main():

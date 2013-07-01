@@ -1,6 +1,21 @@
 Datastore for gridded data
 ==========================
 
+Todo
+----
+- Create location2extent & extent2location
+- Create chunk.getroot()
+- Create chunk.getneighbours()
+- Create chunk.getparent()
+- Create chunk.getchildren()
+
+- 
+- Create chunkupdater that generates updated chunks.
+    - Refuse updating of aggregated chunks.
+- Create recursive chunkaggregator that accepts topchunk to determine when to stop.
+
+
+
 Need to keep track of some stuf during updating:
 - Aggregated chunks must not be updated directly, only via aggregations.
 
@@ -141,3 +156,12 @@ object!) in the storage structure => Generator for chunklevel data.
 
 When a chunk is created at a lower level, one always need to put the
 higher level data into it. This holds for both ned and ed.
+
+Maybe later
+-----------
+Embed the location in the data of the chunk. Both location and data have
+a known size once the structure of the datastore is determined.
+
+Create a separate store for raw data and a store for aggregated
+data. Sometimes we want multiple types of aggregation, but it shouldn't
+become too complex.
