@@ -11,8 +11,8 @@ import unittest
 
 import numpy as np
 
-from gislib.datastore import dimensions
-from gislib.datastore import structures
+from gislib.store import dimensions
+from gislib.store import structures
 
 
 

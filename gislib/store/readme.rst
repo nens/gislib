@@ -3,34 +3,36 @@ Datastore for gridded data
 
 Todo
 ----
-- Create chunk.getroot()
+- Tabelletje met snelheid van data laden uit geotif vs data laden uit store
+- Toepassingen noemen
+
+- Create chunk.getroot() (test it)
 - Create chunk.getneighbours()
 
-- 
-- Create chunkupdater that generates updated chunks.
-    - Refuse updating of aggregated chunks.
-- Create recursive chunkaggregator that accepts topchunk to determine when to stop.
+New concepts
+------------
 
+- Separate store for aggregated data, multiple aggregators possible
+- Selected Aggregators stored in common storage.
+- Disabling deletes aggregate data
+- Enabling aggregates all data again
+- Storage names will be 'original', 'myaggregate'
 
+- Aggregate store closely resembles the original store:
+    - Any data not overwritten is symlinked, but mainly the original data.
+    - No metadata
+    - Separate store
 
-Need to keep track of some stuf during updating:
-- Aggregated chunks must not be updated directly, only via aggregations.
+- A special aggregate store writes only locations and is used to determine the extent of the store when there are no aggregations, or people don't want aggregations.
+- Start encoding the location in the data and add methods to read write it to structure.
 
-- Chunks at higher zoom must first copy lower zoom ancestor data before
-becoming the bottom data.
+Embedded locations
+------------------
 
-- Need to check if current toplevel chunk is updated, or else aggregation
-must continue until a new toplevel chunk is found.
-
-- When aggregating: First aggregate the chunks with highest zoom. Done.
-
-How fast is it to find the top chunk?
-The optimal chunks for reading a certain extent / zoom?
-The realdata chunks?
-
-Must any request start with determining the toplevel chunk? How fast is
-that? But otherwise we won't notice the differences. And that would be
-bad, too.
+- Locations and directions are embedded in the data, so first comes a fixed-length, uncompressed location part. It includes a levels-to-data indicator per dimension. So like
+D1  D2    L
+L I L I   D
+4 5 2 6 7 -2 -3
 
 Chunk updating system
 ---------------------
@@ -67,18 +69,6 @@ must include the original data.
 Masterchunkfinder based on datastore.first()
 Meaningful chunkfinder
 Chunks parents and children finders.
-
-
-Structure
----------
-A structure knows the dimensions of the dataset. It can convert locations
-to extents and vice versa.
-
-Aggregators
------------
-Take care of the aggregation of data in a dimension from chunks with
-more detail to chunks with less detail.
-Resampling, simplification, etc.
 
 Retrievers and ned dimensions
 -----------------------------
@@ -153,12 +143,3 @@ object!) in the storage structure => Generator for chunklevel data.
 
 When a chunk is created at a lower level, one always need to put the
 higher level data into it. This holds for both ned and ed.
-
-Maybe later
------------
-Embed the location in the data of the chunk. Both location and data have
-a known size once the structure of the datastore is determined.
-
-Create a separate store for raw data and a store for aggregated
-data. Sometimes we want multiple types of aggregation, but it shouldn't
-become too complex.
