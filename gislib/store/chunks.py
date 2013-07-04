@@ -11,12 +11,11 @@ class Chunk(object):
     """
     DATA = 'data'
     META = 'meta'
-    LOCATION = 'location'
 
     @classmethod
     def first(cls, store):
         """ Return an arbitrary chunk from storage. """
-        location = pickle.loads(store.storage.first(name=cls.LOCATION))
+        location = store.structure.loads(store.storage.first(name=cls.DATA))
         return cls(store=store, location=location)
     
     @property
@@ -37,9 +36,24 @@ class Chunk(object):
     def __getitem__(self, name):
         """ Get data for this chunk. """
         try:
-            return self.store.storage.chunks.get(chunk=self, name=name)
+            return self.store.storage.chunks.get(
+                chunk=self, name=name
+            )[self.store.structure.loc_size:]
         except IOError:
             raise KeyError(name, self.key)
+
+    def __setitem__(self, name, data):
+        """ Set data for this chunk. """
+        self.store.storage.chunks.put(
+            chunk=self,
+            name=name,
+            data=self.store.structure.dumps(self.location) + data,
+        )
+
+    
+    def __delitem__(self, name, data):
+        """ Del data for this chunk. """
+        self.store.storage.chunks.delete(chunk=self, name=name, data=data)
 
     def __unicode__(self):
         return ';'.join(','.join([unicode(l)] + map(unicode, i)) 
@@ -47,19 +61,6 @@ class Chunk(object):
 
     def __str__(self):
         return self.__unicode__()
-
-    def __setitem__(self, name, data):
-        """ Set or delete data for this chunk. """
-        if data is None:
-            # Delete
-            self.store.storage.chunks.delete(chunk=self, name=name)
-            if name == self.DATA:
-                self[self.LOCATION] = None
-        else:
-            # Put
-            self.store.storage.chunks.put(chunk=self, name=name, data=data)
-            if name == self.DATA:
-                self[self.LOCATION] = pickle.dumps(self.location)
         
     def get_parent(self, dimension=0, levels=1):
         """ Return parent chunk for a dimension. """
@@ -79,7 +80,9 @@ class Chunk(object):
 
     def get_root(self):
         """ 
-        Return the root chunk.
+        Return the root chunk. It only works if the data is fully
+        aggregated in all dimensions to a single chunk at the highest
+        level.
         """
         self[self.DATA]  # Crash if we don't even have data ourselves.
         # Get parents in all dimensions until nodata.
@@ -94,12 +97,8 @@ class Chunk(object):
                 except KeyError:
                     break
                 end = end * 2
-            while True:
-            # Now begin testing the middle of end until end - begin == 1 again.
-                if end - begin == 1:
-                    if begin:
-                        root = root.get_parent(begin)
-                    break
+            while end - begin != 1:
+                # Now begin testing the middle of end until end - begin == 1 again.
                 middle = (begin + end) // 2
                 try:
                     root.get_parent(dimension=i, levels=middle)[self.DATA]
@@ -107,5 +106,7 @@ class Chunk(object):
                     end = middle
                     continue
                 begin = middle
-            return root
+            if begin:
+                root = root.get_parent(dimension=i, levels=begin)
+        return root
             

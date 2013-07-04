@@ -3,11 +3,26 @@ Datastore for gridded data
 
 Todo
 ----
+3 Aggregatie (denken)
+1 Data erin (doen)
+2 Data eruit (doen)
+
+
+Later: Metadata als integers per chunk opslaan en als aparte keystore in storage.
+
 - Tabelletje met snelheid van data laden uit geotif vs data laden uit store
 - Toepassingen noemen
 
-- Create chunk.getroot() (test it)
-- Create chunk.getneighbours()
+- Factor bij de unit voor alignen input data is belangrijk.
+
+- How can the search for the toplevel chunk be faster? If somehow the
+location includes levels and dimenions. At least, on filesystem this
+can be done using
+1/12/2/52/3/123/somehashfortheindicesonly. Then need only as much checks
+for the highest level as there are dimensions. But then it is implemented
+on the storage level, and how to do such stuff for key-value stores? Need
+to move the location key generation from the location to the storage
+as well.
 
 New concepts
 ------------
@@ -25,14 +40,6 @@ New concepts
 
 - A special aggregate store writes only locations and is used to determine the extent of the store when there are no aggregations, or people don't want aggregations.
 - Start encoding the location in the data and add methods to read write it to structure.
-
-Embedded locations
-------------------
-
-- Locations and directions are embedded in the data, so first comes a fixed-length, uncompressed location part. It includes a levels-to-data indicator per dimension. So like
-D1  D2    L
-L I L I   D
-4 5 2 6 7 -2 -3
 
 Chunk updating system
 ---------------------

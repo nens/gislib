@@ -7,7 +7,6 @@ import lz4
 import os
 import textwrap
 
-
 # =============================================================================
 # File storage classes
 # -----------------------------------------------------------------------------
@@ -74,7 +73,8 @@ class ChunkFileStorage(BaseFileStorage):
         The last part is also the filename.
         """
         paths = [self.path, self.NAME, name]
-        paths.extend(self.split_key(chunk.key))
+        #paths.extend(self.split_key(chunk.key))
+        paths.append(chunk.key)
         return os.path.join(*paths)
 
     def put(self, name, chunk, data):
@@ -99,7 +99,7 @@ class CommonFileStorage(BaseFileStorage):
         return os.path.join(self.path, self.NAME, name)
 
     def __getitem__(self, name):
-        """ Get read a common value. """
+        """ Get a common value. """
         path = self.make_path(name=name)
         try:
             return super(CommonFileStorage, self).get(path=path)
@@ -107,12 +107,13 @@ class CommonFileStorage(BaseFileStorage):
             raise KeyError(name)
 
     def __setitem__(self, name, data):
+        """ Set a common value. """
         path = self.make_path(name=name)
-        # Delete
-        if data is None:
-            return super(CommonFileStorage, self).delete(path=path)
-        # Write
-        super(CommonFileStorage, self).put(path=path, data=data)
+        return super(CommonFileStorage, self).put(path=path, data=data)
+
+    def __delitem__(self, name, data):
+        """ Delete a common value. """
+        return super(CommonFileStorage, self).delete(path=path)
 
 
 class FileStorage(object):

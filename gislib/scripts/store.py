@@ -37,13 +37,14 @@ def get_parser():
     return parser
 
 
+
 def command(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
     structure = structures.Structure(
         dimensions=[
             dimensions.SpatialDimension(projection=28992, size=256),
-            dimensions.TimeDimension(calendar='minutes since 200130401', size=1),
+            dimensions.TimeDimension(calendar='minutes since 20130401', size=1),
         ],
         dtype='f4',
         nodatavalue=np.finfo('f4').min,
@@ -59,26 +60,23 @@ def command(targetpath, sourcepaths):
         dimensions.Location(level=1, indices=(1, 1)),
         dimensions.Location(level=1, indices=(1,)),
     )
+
+    #structure.loads(location)
+
     chunk = chunks.Chunk(location=location, store=store)
     ori = chunk
-    for i in range(100):
+    for i in range(10):
         chunk = chunk.get_parent()
         chunk[chunks.Chunk.DATA] = str(i)
     master = chunk.get_parent(1)
-    master[chunks.Chunk.DATA] = 'master'
+    master[chunks.Chunk.DATA] = str('master')
 
-    print(ori)
     ori['data'] = 'this'
     import datetime
     start = datetime.datetime.now()
     root = ori.get_root()
     print(datetime.datetime.now() - start)
-    print(ori.get_root()['data'])
-
-
-
-
-
+    print(root['data'])
 
 def main():
     """ Call command with args from parser. """

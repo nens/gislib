@@ -6,6 +6,10 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
+import numpy as np
+
+from gislib.store import dimensions
+
 """
 A structure defines the combination of dimensions and datacontent for
 a datastore.
@@ -25,7 +29,23 @@ class Structure(object):
         self.nodatavalue = nodatavalue  # Also used to identify NED removals.
         self.dimensions = dimensions
         self.dtype = dtype  # Any pickleable numpy dtype object will do.
+        self.loc_size = 8 * sum(1 + d.M for d in self.dimensions)
 
+    def __len__(self):
+        """ Return the length of the location data. """
+        return 
+
+    def dumps(self, location):
+        """ Return a serialized location string. """
+        return np.int64([j for l, i in location for j in (l,) + i]).tostring()
+
+    def loads(self, location):
+        """ Load location from blobstring. """
+        v = iter(np.fromstring(location[:self.locsize], dtype=np.int64))
+        return tuple(dimensions.Location(level=v.next(),                                   
+                                         indices=tuple(v.next() 
+                                                       for n in range(d.M)))
+                     for d in self.dimensions)                           
 
     def get_locations(self, extent, resolution):
         """

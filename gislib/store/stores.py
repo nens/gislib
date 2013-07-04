@@ -42,6 +42,8 @@ class Store(object):
             self.storage.common[self.STRUCTURE] = pickle.dumps(structure)
             self.structure = structure
 
+    
+
 
     def verify_not_initialized(self):
         """ If the store already has a structure, raise an exception. """

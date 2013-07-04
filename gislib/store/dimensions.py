@@ -13,6 +13,9 @@ Location = collections.namedtuple('Location', ('level', 'indices'))
 
 
 class BaseDimension(object):
+    
+    M = 1  # Dimension multiplicity
+    
     def __init__(self, size, **kwargs):
         """
         Handle dimension mapping to files and blocks
@@ -74,8 +77,6 @@ class UnitDimension(BaseDimension):
     """
     Base for all dimension classes
     """
-    DIMENSIONS = 1
-
     def __init__(self, unit, *args, **kwargs):
         self.unit = unit
         super(UnitDimension, self).__init__(*args, **kwargs)
@@ -85,8 +86,6 @@ class TimeDimension(BaseDimension):
     """ 
     Dimension with coards calender units.
     """
-    DIMENSIONS = 1
-
     def __init__(self, calendar, *args, **kwargs):
         self.calendar = calendar
         super(TimeDimension, self).__init__(*args, **kwargs)
@@ -96,7 +95,7 @@ class SpatialDimension(BaseDimension):
     """
     Dimension with projection units, suitable for gdal reprojection.
     """
-    DIMENSIONS = 2
+    M = 2  # Dimension multiplicity
 
     def __init__(self, projection, *args, **kwargs):
         self.projection = projection
