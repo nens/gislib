@@ -15,19 +15,30 @@ Later: Metadata als integers per chunk opslaan en als aparte keystore in storage
 
 - Factor bij de unit voor alignen input data is belangrijk.
 
-- How can the search for the toplevel chunk be faster? If somehow the
-location includes levels and dimenions. At least, on filesystem this
-can be done using
-1/12/2/52/3/123/somehashfortheindicesonly. Then need only as much checks
-for the highest level as there are dimensions. But then it is implemented
-on the storage level, and how to do such stuff for key-value stores? Need
-to move the location key generation from the location to the storage
-as well.
+- How can the search for the toplevel chunk be faster?
+
+- Do we need to always query for the top chunk? No!
+    - Only when aggregating
+    - Not when querying. 
+    
 
 New concepts
 ------------
 
+- Aggregation:
+    - Aggregate up to the level where there is only one pixel or datavalue left in the block.
+    - A base aggregator stores no data, but stores the location.
+    - Define aggregators in the store per dimension. They are not part of the structure, because they can be removed.
+    - How to make symlinks using the chunkstore?
+    via store.link(chunk, chunk, data)
+
 - Separate store for aggregated data, multiple aggregators possible
+
+- keys will be created from aggregator names. Aggregators are lists at each levl
+- base data
+- aggregated data: key will be hash of aggregators a1b2 for example.
+
+
 - Selected Aggregators stored in common storage.
 - Disabling deletes aggregate data
 - Enabling aggregates all data again

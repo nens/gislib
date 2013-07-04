@@ -78,16 +78,26 @@ class ChunkFileStorage(BaseFileStorage):
         return os.path.join(*paths)
 
     def put(self, name, chunk, data):
+        """ Put chunk data. """
         path = self.make_path(name=name, chunk=chunk)
         super(ChunkFileStorage, self).put(path=path, data=data)
 
     def get(self, name, chunk):
+        """ Get chunk data. """
         path = self.make_path(name=name, chunk=chunk)
         return super(ChunkFileStorage, self).get(path=path)
 
     def delete(self, name, chunk):
+        """ Delete chunk data. """
         path = self.make_path(name=name, chunk=chunk)
         return super(ChunkFileStorage, self).delete(path=path)
+
+    def create_link(self, name, chunk, link):
+        """ Create a symbolic link to a chunk """
+        chunkpath = self.make_path(name=name, chunk=chunk)
+        linkpath = self.make_path(name=name, chunk=link)
+        os.symlink(chunk, link)
+        
 
 
 class CommonFileStorage(BaseFileStorage):

@@ -50,7 +50,6 @@ class Chunk(object):
             data=self.store.structure.dumps(self.location) + data,
         )
 
-    
     def __delitem__(self, name, data):
         """ Del data for this chunk. """
         self.store.storage.chunks.delete(chunk=self, name=name, data=data)
