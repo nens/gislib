@@ -7,6 +7,7 @@ import lz4
 import os
 import textwrap
 
+
 # =============================================================================
 # File storage classes
 # -----------------------------------------------------------------------------
@@ -53,7 +54,7 @@ class BaseFileStorage(object):
 
 class SchemaFileStorage(BaseFileStorage):
     """ Store key value data for a schema. """
-    def __init__(self, path, schema, split=False):
+    def __init__(self, path, schema, split):
         """ Sets the schema name. """
         super(SchemaFileStorage, self).__init__(path=path)
         self.schema = schema
@@ -83,13 +84,19 @@ class SchemaFileStorage(BaseFileStorage):
     def __getitem__(self, key):
         """ Get value. """
         path = self.make_path(key=key)
-        return super(SchemaFileStorage, self).get(path=path)
+        try:
+            return super(SchemaFileStorage, self).get(path=path)
+        except IOError:
+            raise KeyError(key)
 
     def __delitem__(self, key):
         """ Delete value. """
         path = self.make_path(key=key)
-        return super(SchemaFileStorage, self).delete(path=path)
-    
+        try:
+            return super(SchemaFileStorage, self).delete(path=path)
+        except IOError:
+            raise KeyError('key')
+
     def first(self):
         """ Return named data of arbitrary chunk. """
         path = os.path.join(self.path, self.schema)
@@ -103,7 +110,7 @@ class SchemaFileStorage(BaseFileStorage):
         """ Create a symbolic link to a chunk """
         chunkpath = self.make_path(name=name, chunk=chunk)
         linkpath = self.make_path(name=name, chunk=link)
-        os.symlink(chunk, link)
+        os.symlink(chunkpath, linkpath)
 
 
 class FileStorage(object):
@@ -114,8 +121,6 @@ class FileStorage(object):
         """ Set storage path. """
         self.path = path
 
-    def get_schema(self, schema):
+    def get_schema(self, schema, split=False):
         """ Return SchemaFileStorage object. """
-        return SchemaFileStorage(self.path, schema)
-        
-        
+        return SchemaFileStorage(path=self.path, schema=schema, split=split)

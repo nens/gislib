@@ -3,138 +3,62 @@ Datastore for gridded data
 
 Todo
 ----
-
-So design goes differently. 
-
-Chunks become agnostic of levels. They can also be used to store metadata pointers and metadata records.
-Locations become objects with the get_parent and get_children methods.
-Structure can convert string to location, string to dataset
-Aggregators operate on datasets
+Make size a tuple for a dimension. Then m is unneeded. Oh wait, what about the single array of xyz coordinates? Has a size. Max width before starting a new block, etc. Should work. Need to redefine de level, though.
 
 
+Make datasets function:
+- Get an empty dataset
+- 'Reproject' data into it
+- Put it back
+
+Converters:
+- Take care of getting data from one dataset to another with similar structures.
+- Inspects structures to see how data must go from one to another
+- For example: NearestNeigbourConverter
+
+Aggregators:
+- Take care of lining up the right datasets and using the right converters.
 
 
+Adapters:
+- Put various formats into our structure format (for example gdal)
+- Get various formats from our structure format
 
-
-
-
-
-3 Aggregatie (denken)
 1 Data erin (doen)
 2 Data eruit (doen)
-
-class Dataset.
-
-chunk['data'] returns a dataset
-you also must write a dataset object to a chunk.
-
-storage stores data using a key (chunks) or not using a key (common).
-structure can do
-
-bin => location
-bin => dataset (including ned dims)
-
-location to bin
-dataset to bin
-
-dataset:
-    structure
-    location
-    neddims as masked array
-    data as masked array
-
-
-
-
-
-Later: Metadata als integers per chunk opslaan en als aparte keystore in storage.
-
-- Tabelletje met snelheid van data laden uit geotif vs data laden uit store
-- Toepassingen noemen
-
-- Factor bij de unit voor alignen input data is belangrijk.
-
-- How can the search for the toplevel chunk be faster?
+3 Aggregatie (denken)
+4 Metadata
 
 - Do we need to always query for the top chunk? No!
     - Only when aggregating
-    - Not when querying. 
-
-- 
-    
-
-New concepts
-------------
-
-- Aggregation:
-    - Aggregate up to the level where there is only one pixel or datavalue left in the block.
-    - A base aggregator stores no data, but stores the location.
-    - Define aggregators in the store per dimension. They are not part of the structure, because they can be removed.
-    - How to make symlinks using the chunkstore?
-    via store.link(chunk, chunk, data)
-
-- Separate store for aggregated data, multiple aggregators possible
-
-- keys will be created from aggregator names. Aggregators are lists at each levl
-- base data
-- aggregated data: key will be hash of aggregators a1b2 for example.
-
-
-- Selected Aggregators stored in common storage.
-- Disabling deletes aggregate data
-- Enabling aggregates all data again
-- Storage names will be 'original', 'myaggregate'
-
-- Aggregate store closely resembles the original store:
-    - Any data not overwritten is symlinked, but mainly the original data.
-    - No metadata
-    - Separate store
-
-- A special aggregate store writes only locations and is used to determine the extent of the store when there are no aggregations, or people don't want aggregations.
-- Start encoding the location in the data and add methods to read write it to structure.
-
-Chunk updating system
----------------------
-
-Chunks have a unique location that maps one-to-one with an extent. However
-data sources and targets have extents and datastructures, but they don't
-(necessarily) map onto the chunk extents. Therefore, algorithms are
-needed to translate source and target datasets to and from chunks.
-
-We also need adapters to convert things like gdal datasets to the
-datastore structure. It would be nice to predict the chunks that will
-be updated from a complete set of datasources, in order to divide the
-jobs between processes.
+    - Investigate for get_root vs just trying all datasets at a level.
 
 Aggregation system
 ------------------
 
-Chunks that have been written must be automatically added to a
-set of updated chunks. Their parents have to be updated too, use
-multiprocessing. The aggregations use predefined algorithms according
-to the datastore structure. Only when we aggregate aggregated
-dimensions(Highly complex stuff?) There can be a master chunk that
-contains the full datastore extent. Otherwise, it has to be constructed
-from the last aggregation from each aggregation.
+- Aggregation:
+    - Aggregate up to the level where there is only one pixel or datavalue left in the block.
+    - A base aggregator stores no data, but stores the location.
+    - Separate store for aggregated data, multiple aggregators possible
+    - Define aggregators in the store per dimension.
+    - Adding an aggregator:
+        - Selected Aggregators stored in common storage.
+        - Assign storage schema
+        - keys will be created from aggregator names. Aggregators are lists at each level
+        - aggregated data: key will be hash of aggregators a1b2 for example.
+        - Link all data in databox schema if it is the first dimension
+        - Link all data from all aggregators of the previous dimension
+        - No metadata for aggregators
+    - Removing aggregator deletes aggregate data
+    - Enabling aggregates all data again...
 
-Requirements
-------------
 
-Datastore (?) can translate chunk location to extent Datastore (?) can
-translate extent to chunk(location)generator Note that when updating, we
-need to keep track of the orginal extent, because the last aggregations
-must include the original data.
+Thoughts on non-equidistant datasets
+------------------------------------
+ned scale aggregation: For a given level increase, gather all ned values in other dimensions and aggregate them, then aggrate the scale under hand.
 
-Masterchunkfinder based on datastore.first()
-Meaningful chunkfinder
-Chunks parents and children finders.
+ned scale updating: If there is only one point in a dimension, it will be placed at level 0. If another point is added, the level can be determined, but one has to check level 0 for the existence of a single point.
 
-Retrievers and ned dimensions
------------------------------
-For a ned dimension, just grab anything in the extent and clip.
-For a ed dimension, grab anything in the extent and resample according to call.
-
-NED dimensions have some special properties:
 
 - A default zoomlevel for the first point (when there is one point, it
 is not clear at which zoom to put it. As soon there is a second point,

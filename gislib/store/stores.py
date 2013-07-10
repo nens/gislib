@@ -8,22 +8,10 @@ from __future__ import division
 
 import pickle
 
-from gislib.store import aggregators
-from gislib.store import chunks
-from gislib.store import utils
 
 class Store(object):
     """
-    Raster object with optional arguments including
-    time. Choices to be made:
-
-    chunksize, filesize
-    dimensions: ['time', 'spatial', 'spatial']
-    calendars:
-    equidistant time or not?
-    equidistant x y or not?
-    z or not?
-    coupled x y
+    Raster object with optional arguments including.
     """
 
     FRAME = 'frame'
@@ -34,22 +22,38 @@ class Store(object):
         the store.
         """
         # Init schemas
-        for name in ('databox', 'metabox', 'config', 'metadata'):
-            setattr(self, name, storage.get_schema(name))
-        
+        for schema in ('databox', 'metabox', 'config', 'metadata'):
+            split = False if schema == 'config' else True
+            setattr(self, schema, storage.get_schema(schema, split=split))
+
+        # Add a schema for each aggregator when they are added.
         if frame is None:
             self.frame = pickle.loads(self.config[self.FRAME])
-        return
+            return
 
         # Write config
         self.verify_not_initialized()
         self.config[self.FRAME] = pickle.dumps(frame)
-        self.structure = structure
+        self.frame = frame
 
     def verify_not_initialized(self):
         """ If the store already has a structure, raise an exception. """
         try:
-            self.config[self.STRUCTURE]
+            self.config[self.FRAME]
         except KeyError:
             return  # That's expected.
         raise IOError('Store already has a structure!')
+
+
+    def get_datasets(self, extent, resolution):
+        """ Return dataset generator. """
+        for location in self.frame.get_locations(extent, resolution):
+            try:
+                data = self.databox[location.key]
+                yield self.frame.to_dataset(data)
+            except KeyError:
+                yield self.frame.get_empty_dataset(location)
+
+                
+                
+        

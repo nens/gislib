@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 
 import collections
+import hashlib
 import math
 
 import numpy as np
@@ -141,16 +142,17 @@ class Frame(object):
     @property
     def shape(self):
         """ Return shape based on frame. """
-        raise NotImplementedError
-
+        return tuple([d.M * (d.size,) for d in self.dimensions])
 
     def make_dataset_string(self, dataset):
         """ Return serialized dataset string. Includes the NED dims. """
-        return sum([n.tostring() 
-                    for n in dataset.nedims] + [dataset.array.tostring()])
+        return ''.join(*([location.tostring()] +
+                         [n.tostring() 
+                          for n in dataset.nedims] + 
+                         [dataset.array.filled().tostring()]))
 
     def extract_location(self, data):
-        """ Load location from blobstring. """
+        """ Load location from string. """
         v = iter(np.fromstring(location[self.location], dtype=np.int64))
         return tuple(dimensions.Location(level=v.next(),                                   
                                          indices=tuple(v.next() 
@@ -166,34 +168,48 @@ class Frame(object):
         return np.ma.array(np.ma.masked_equal(
             fromstring(data[self.data], dtype=self.dtype),
             self.nodatavalue,
-        )
+        ))
 
     def to_dataset(self, data):
         """ Return a dataset corresponding to data. """
         return Dataset(
-            extent=self.get_extent(self.extract_location(data)),
+            extent=self.extract_location(data).extent,
             scales=self.extract_scales(data),
-            array=self.extract_array(data),
+            data=self.extract_array(data),
         )
+
+    def get_empty_dataset(self, location):
+        """ Return an empty dataset. """
+        shape = tuple([i for d in self.shape for i in d])
+        return Dataset(
+            extent=location.extent,
+            scales=[],
+            data=np.ma.masked_all(shape, self.dtype)
+        )
+
+    def to_string(dataset):
+        pass
+        
 
     def get_locations(self, extent, resolution):
         """
         Return a generator of location tuples.
         """
         # Coerce resolutions to levels
-        level = tuple(d.get_level(r)
+        level = tuple(d.get_level(r[0])
                       for d, r in zip(self.dimensions, resolution))
 
-        # Get the funcs that return the per-dimension location generators
-        funcs = (d.get_locations(e, l)
+        # Get the funcs that return the per-dimension sublocation generators
+        funcs = (d.get_sublocations(e, l)
                  for d, e, l in zip(self.dimensions, extent, level))
 
-        # Nest via reduce function.
+        # Nest via reduce function
         def reducer(f1, f2):
-            return lambda: (tuple([i]) + tuple([j]) 
+            return lambda: ((i,) + (j,) 
                             for j in f2() for i in f1())
-
-        return reduce(reducer, funcs)()
+        
+        return (Location(frame=self, sublocations=sublocations)
+                for sublocations in reduce(reducer, funcs)())
 
 
 # =============================================================================
@@ -207,8 +223,9 @@ class Location(object):
         self.frame = frame
         self.key = hashlib.md5(self.tostring()).hexdigest()
     
-    def get_extent(self):
-        """ Return the extent covered by a chunk."""
+    @property
+    def extent(self):
+        """ Return extent tuple. """
         return tuple(dimension.get_extent(sublocation)
                      for sublocation, dimension in zip(self.sublocations,
                                                        self.frame.dimensions))
@@ -280,22 +297,17 @@ class Location(object):
     def __str__(self):
         return '<Location: {}>'.format(self.toarray())
 
+    def __eq__(self, location):
+        return (self.toarray() == location.toarray()).all()
+
 
 # =============================================================================
 # Datasets
 # -----------------------------------------------------------------------------
 class Dataset(object):
-    """
-    """
-
-    def __init__(self, data, structure):
+    def __init__(self, extent, scales, data):
         """ 
-        Init.        
         """
-        self.structure = structure
-        self.location = structure.get_location(data)
-        self.nedims = structure.get_nedims(data)
-        self.data = structure.get_array(data)
-
-    def tostring(self):
-        return structure.tostring(
+        self.extent = extent
+        self.scales = scales
+        self.data = data
