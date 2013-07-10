@@ -13,7 +13,6 @@ import shutil
 import numpy as np
 
 from gislib.store import chunks
-from gislib.store import dimensions
 from gislib.store import storages
 from gislib.store import stores
 from gislib.store import structures
@@ -41,10 +40,10 @@ def get_parser():
 def command(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
-    structure = structures.Structure(
+    frame = structures.Frame(
         dimensions=[
-            dimensions.SpatialDimension(projection=28992, size=256),
-            dimensions.TimeDimension(calendar='minutes since 20130401', size=1),
+            structures.SpatialDimension(projection=28992, size=256),
+            structures.TimeDimension(calendar='minutes since 20130401', size=1),
         ],
         dtype='f4',
         nodatavalue=np.finfo('f4').min,
@@ -55,28 +54,41 @@ def command(targetpath, sourcepaths):
     except OSError:
         pass
 
-    store = stores.Store(storage=storage, structure=structure)
-    location = (
-        dimensions.Location(level=1, indices=(1, 1)),
-        dimensions.Location(level=1, indices=(1,)),
-    )
+    store = stores.Store(storage=storage, frame=frame)
+    location = structures.Location(frame=frame, sublocations=(
+        structures.Sublocation(level=1, indices=(1, 1)),
+        structures.Sublocation(level=1, indices=(1,)),
+    ))
+    print(location)
+    print(location.get_parent())
+    for c in location.get_children():
+        print(c)
+    print(frame)
+
+    # Add the location when saving, and get it from the data
+    #
+
+
 
     #structure.loads(location)
 
-    chunk = chunks.Chunk(location=location, store=store)
-    ori = chunk
-    for i in range(10):
-        chunk = chunk.get_parent()
-        chunk[chunks.Chunk.DATA] = str(i)
-    master = chunk.get_parent(1)
-    master[chunks.Chunk.DATA] = str('master')
+    #chunk = chunks.Chunk(location=location, store=store)
+    #print(chunk.keys())
+    #chunk['data'] = 'blabla'
+    #print(chunk['data'])
+    #ori = chunk
+    #for i in range(10):
+        #chunk = chunk.get_parent()
+        #chunk[chunks.Chunk.DATA] = str(i)
+    #master = chunk.get_parent(1)
+    #master[chunks.Chunk.DATA] = str('master')
 
-    ori['data'] = 'this'
-    import datetime
-    start = datetime.datetime.now()
-    root = ori.get_root()
-    print(datetime.datetime.now() - start)
-    print(root['data'])
+    #ori['data'] = 'this'
+    #import datetime
+    #start = datetime.datetime.now()
+    #root = ori.get_root()
+    #print(datetime.datetime.now() - start)
+    #print(root['data'])
 
 def main():
     """ Call command with args from parser. """

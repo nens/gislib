@@ -19,7 +19,7 @@ class BaseFileStorage(object):
         """ Set the path. """
         self.path = path
 
-    def put(self, path, data):
+    def put(self, path, value):
         """ Safe writing using tempfile and atomic move. """
         # Create directory if necessary
         try:
@@ -34,7 +34,7 @@ class BaseFileStorage(object):
             '.' + hashlib.md5(timestamp + path).hexdigest()
         )
         with open(temppath, 'wb') as tempfile:
-            tempfile.write(lz4.dumps(data))
+            tempfile.write(lz4.dumps(value))
 
         # By using an atomic move / rename operation, there is no risk
         # of reading corrupted data, only outdated data.
@@ -51,79 +51,59 @@ class BaseFileStorage(object):
         os.removedirs(os.path.dirname(path))
 
 
-class ChunkFileStorage(BaseFileStorage):
-    """ Store chunk level data. """
-
-    NAME = 'chunks'
+class SchemaFileStorage(BaseFileStorage):
+    """ Store key value data for a schema. """
+    def __init__(self, path, schema, split=False):
+        """ Sets the schema name. """
+        super(SchemaFileStorage, self).__init__(path=path)
+        self.schema = schema
+        self.split = split
 
     def split_key(self, key, size=4, count=4):
         """ Split a key in directory parts and a file part. """
         total = size * count
         return textwrap.wrap(key[:total], size) + [key[total:]]
 
-    def make_path(self, name, chunk):
+    def make_path(self, key):
         """
-        Return a filepath for a chunk.
-
-        The path consists of:
-        - Fixed part indicating chunk data
-        - Variable part based on name
-        - Variable parts based on chunk key
-
-        The last part is also the filename.
+        Return a filepath corresponding to key.
         """
-        paths = [self.path, self.NAME, name]
-        #paths.extend(self.split_key(chunk.key))
-        paths.append(chunk.key)
+        paths = [self.path, self.schema]
+        if self.split:
+            paths.extend(self.split_key(key))
+        else:
+            paths.append(key)
         return os.path.join(*paths)
 
-    def put(self, name, chunk, data):
-        """ Put chunk data. """
-        path = self.make_path(name=name, chunk=chunk)
-        super(ChunkFileStorage, self).put(path=path, data=data)
+    def __setitem__(self, key, value):
+        """ Put value. """
+        path = self.make_path(key=key)
+        return super(SchemaFileStorage, self).put(path=path, value=value)
 
-    def get(self, name, chunk):
-        """ Get chunk data. """
-        path = self.make_path(name=name, chunk=chunk)
-        return super(ChunkFileStorage, self).get(path=path)
+    def __getitem__(self, key):
+        """ Get value. """
+        path = self.make_path(key=key)
+        return super(SchemaFileStorage, self).get(path=path)
 
-    def delete(self, name, chunk):
-        """ Delete chunk data. """
-        path = self.make_path(name=name, chunk=chunk)
-        return super(ChunkFileStorage, self).delete(path=path)
+    def __delitem__(self, key):
+        """ Delete value. """
+        path = self.make_path(key=key)
+        return super(SchemaFileStorage, self).delete(path=path)
+    
+    def first(self):
+        """ Return named data of arbitrary chunk. """
+        path = os.path.join(self.path, self.schema)
+        for basedir, dirnames, filenames in os.walk(path):
+            if filenames:
+                return super(SchemaFileStorage, self).get(
+                    path=os.path.join(basedir, filenames[0]),
+                )
 
     def create_link(self, name, chunk, link):
         """ Create a symbolic link to a chunk """
         chunkpath = self.make_path(name=name, chunk=chunk)
         linkpath = self.make_path(name=name, chunk=link)
         os.symlink(chunk, link)
-        
-
-
-class CommonFileStorage(BaseFileStorage):
-    """ Store datastore common data. """
-
-    NAME = 'common'
-
-    def make_path(self, name):
-        return os.path.join(self.path, self.NAME, name)
-
-    def __getitem__(self, name):
-        """ Get a common value. """
-        path = self.make_path(name=name)
-        try:
-            return super(CommonFileStorage, self).get(path=path)
-        except IOError:
-            raise KeyError(name)
-
-    def __setitem__(self, name, data):
-        """ Set a common value. """
-        path = self.make_path(name=name)
-        return super(CommonFileStorage, self).put(path=path, data=data)
-
-    def __delitem__(self, name, data):
-        """ Delete a common value. """
-        return super(CommonFileStorage, self).delete(path=path)
 
 
 class FileStorage(object):
@@ -131,14 +111,11 @@ class FileStorage(object):
     A container for various storages that together form the file storage.
     """
     def __init__(self, path):
+        """ Set storage path. """
         self.path = path
-        self.base = BaseFileStorage(path)
-        self.common = CommonFileStorage(path)
-        self.chunks = ChunkFileStorage(path)
 
-    def first(self, name):
-        """ Return named data of arbitrary chunk. """
-        path = os.path.join(self.path, self.chunks.NAME, name)
-        for basedir, dirnames, filenames in os.walk(path):
-            if filenames:
-                return self.base.get(os.path.join(basedir, filenames[0]))
+    def get_schema(self, schema):
+        """ Return SchemaFileStorage object. """
+        return SchemaFileStorage(self.path, schema)
+        
+        

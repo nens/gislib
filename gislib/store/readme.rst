@@ -3,9 +3,48 @@ Datastore for gridded data
 
 Todo
 ----
+
+So design goes differently. 
+
+Chunks become agnostic of levels. They can also be used to store metadata pointers and metadata records.
+Locations become objects with the get_parent and get_children methods.
+Structure can convert string to location, string to dataset
+Aggregators operate on datasets
+
+
+
+
+
+
+
+
+
 3 Aggregatie (denken)
 1 Data erin (doen)
 2 Data eruit (doen)
+
+class Dataset.
+
+chunk['data'] returns a dataset
+you also must write a dataset object to a chunk.
+
+storage stores data using a key (chunks) or not using a key (common).
+structure can do
+
+bin => location
+bin => dataset (including ned dims)
+
+location to bin
+dataset to bin
+
+dataset:
+    structure
+    location
+    neddims as masked array
+    data as masked array
+
+
+
 
 
 Later: Metadata als integers per chunk opslaan en als aparte keystore in storage.
@@ -20,6 +59,8 @@ Later: Metadata als integers per chunk opslaan en als aparte keystore in storage
 - Do we need to always query for the top chunk? No!
     - Only when aggregating
     - Not when querying. 
+
+- 
     
 
 New concepts

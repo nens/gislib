@@ -10,7 +10,6 @@ import pickle
 
 from gislib.store import aggregators
 from gislib.store import chunks
-from gislib.store import dimensions
 from gislib.store import utils
 
 class Store(object):
@@ -27,28 +26,30 @@ class Store(object):
     coupled x y
     """
 
-    STRUCTURE = 'structure'
+    FRAME = 'frame'
 
-    def __init__(self, storage, structure=None):
-        """ initialize. """
-        self.storage = storage
+    def __init__(self, storage, frame=None):
+        """
+        Separate schemas in the storage are placed as attributes on
+        the store.
+        """
+        # Init schemas
+        for name in ('databox', 'metabox', 'config', 'metadata'):
+            setattr(self, name, storage.get_schema(name))
+        
+        if frame is None:
+            self.frame = pickle.loads(self.config[self.FRAME])
+        return
 
-        if structure is None:
-            self.structure = pickle.loads(
-                self.storage.common[self.STRUCTURE],
-            )
-        else:
-            self.verify_not_initialized()
-            self.storage.common[self.STRUCTURE] = pickle.dumps(structure)
-            self.structure = structure
-
-    
-
+        # Write config
+        self.verify_not_initialized()
+        self.config[self.FRAME] = pickle.dumps(frame)
+        self.structure = structure
 
     def verify_not_initialized(self):
         """ If the store already has a structure, raise an exception. """
         try:
-            self.storage.common[self.STRUCTURE]
+            self.config[self.STRUCTURE]
         except KeyError:
             return  # That's expected.
         raise IOError('Store already has a structure!')
