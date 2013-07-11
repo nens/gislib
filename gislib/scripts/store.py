@@ -12,9 +12,9 @@ import shutil
 
 import numpy as np
 
+from gislib.store import core
 from gislib.store import stores
 from gislib.store import storages
-from gislib.store import structures
 
 description = """
 Commandline tool for working with nens/gislib stores.
@@ -35,18 +35,16 @@ def get_parser():
     return parser
 
 
-
 def command(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
-    frame = structures.Frame(
-        dimensions=[
-            structures.SpatialDimension(projection=28992, size=256),
-            structures.TimeDimension(calendar='minutes since 20130401', size=1),
-        ],
-        dtype='f4',
-        nodatavalue=np.finfo('f4').min,
-    )
+    spatial_scale = core.SpatialScale(projection=28992, size=(256,256))
+    time_scale = core.TimeScale(calendar='minutes since 20130401', size=(1,))
+    scales = [core.FrameScale(spatial_scale), core.FrameScale(time_scale)]
+    metric = core.FrameMetric(scales=scales)
+    frame = core.Frame(metric=metric,
+                       dtype='f4',
+                       nodatavalue=np.finfo('f4').min)
 
     try:
         shutil.rmtree(targetpath)
@@ -54,12 +52,12 @@ def command(targetpath, sourcepaths):
         pass
 
     store = stores.Store(storage=storage, frame=frame)
-    location = structures.Location(frame=frame, sublocations=(
-        structures.Sublocation(level=1, indices=(1, 1)),
-        structures.Sublocation(level=1, indices=(1,)),
+    location = core.Location(parts=(
+        core.Sublocation(level=1, indices=(1, 1)),
+        core.Sublocation(level=1, indices=(1,)),
     ))
-    for dataset in store.get_datasets(extent=location.extent, 
-                                      resolution=frame.shape):
+    for dataset in store.get_datasets(extent=metric.get_extent(location), 
+                                      size=metric.size):
         print(dataset.data)
 
 

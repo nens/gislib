@@ -45,9 +45,9 @@ class Store(object):
         raise IOError('Store already has a structure!')
 
 
-    def get_datasets(self, extent, resolution):
+    def get_datasets(self, extent, size):
         """ Return dataset generator. """
-        for location in self.frame.get_locations(extent, resolution):
+        for location in self.frame.get_locations(extent, size):
             try:
                 data = self.databox[location.key]
                 yield self.frame.to_dataset(data)

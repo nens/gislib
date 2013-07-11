@@ -3,13 +3,15 @@ Datastore for gridded data
 
 Todo
 ----
-Make size a tuple for a dimension. Then m is unneeded. Oh wait, what about the single array of xyz coordinates? Has a size. Max width before starting a new block, etc. Should work. Need to redefine de level, though.
-
-
 Make datasets function:
 - Get an empty dataset
 - 'Reproject' data into it
 - Put it back
+
+Pitch:
+- Just show data adding and retrieving, and converting to another store
+  optimized for timeseries.
+- Configuring a store is tedious. Make json templates.
 
 Converters:
 - Take care of getting data from one dataset to another with similar structures.
@@ -32,6 +34,28 @@ Adapters:
 - Do we need to always query for the top chunk? No!
     - Only when aggregating
     - Investigate for get_root vs just trying all datasets at a level.
+
+
+Datatructure
+============
+Store
+    (Aggregators)
+    Storage
+    Frame
+        FrameMetric
+            FrameScale(dimension, offset, scale, factor)
+            FrameScale...
+            ...
+
+Dataset
+    DatasetMetric
+        DatasetScale(dimension, extent)
+        DatasetScale...
+        ...
+    Axes
+    Data
+
+Location becomes just a container. Ask your FrameMetric for the extent of a location, or the root, or the parents or children.
 
 Aggregation system
 ------------------
