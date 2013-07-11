@@ -3,8 +3,12 @@ Datastore for gridded data
 
 Todo
 ----
+
+Testing:
+- Lower level storage tests
+- Lower level tests for scales and metrics.
+
 Make datasets function:
-- Get an empty dataset
 - 'Reproject' data into it
 - Put it back
 

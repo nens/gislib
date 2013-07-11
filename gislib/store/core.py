@@ -33,6 +33,9 @@ class Location(object):
     def __str__(self):
         return '<Location: {}>'.format(self.toarray())
 
+    def __repr__(self):
+        return '<Location: {}>'.format(self.toarray())
+
     def __eq__(self, location):
         return self.tostring() == location.tostring()
 
@@ -68,6 +71,10 @@ class FrameScale(object):
             self.offset = (0,) * multiplicity
         else:
             self.offset = offset
+
+    def __iter__(self):
+        """ Convenience for the deserialization of locations. """
+        return (None for s in self.scale.size)
     
     def get_level(self, extent, size):
         """
@@ -158,7 +165,14 @@ class FrameMetric(BaseMetric):
         """ Return extent tuple. """
         return tuple(d.get_extent(s)
                      for s, d in zip(location.parts, self.scales))
-    
+
+    def get_metric(self, location):
+        """ Return dataset metric. """
+        extent = self.get_extent(location)
+        scales = [DatasetScale(scale=s.scale, extent=e)
+                  for s, e in zip(self.scales, extent)]
+        return DatasetMetric(scales=self.scales)
+
     def get_parent(self, location, axis=0, levels=1):
         """ 
         Return a location.
@@ -223,12 +237,6 @@ class FrameMetric(BaseMetric):
             if begin:
                 root = root.get_parent(dimension=i, levels=begin)
         return root
-    
-    # =========================================================================
-    # Location navigation
-    # -------------------------------------------------------------------------
-
-
 
 
 # =============================================================================
@@ -250,59 +258,61 @@ class Frame(object):
         axis = 8 * sum(1 + len(f.scale.size) for f in self.metric.scales)
         data = axis  # No (ned) axis currently.
         self.location = slice(axis)
-        self.nedims = slice(axis, data)
+        self.axes = slice(axis, data)
         self.data = slice(data, None)
 
     @property
     def size(self):
         """ Return bytesize. """
-        raise NotImplementedError
+        return self.dtype.itemsize * np.prod(self.shape)
+    
+    @property
+    def shape(self):
+        """ Return numpy shape. """
+        return self.metric.shape
 
-    def make_dataset_string(self, dataset):
-        """ Return serialized dataset string. Includes the NED dims. """
-        return ''.join(*([location.tostring()] +
-                         [n.tostring() 
-                          for n in dataset.nedims] + 
-                         [dataset.array.filled().tostring()]))
+    def get_metric(self, location):
+        """ Convenience method. """
+        return self.metric.get_metric(location)
 
-    def extract_location(self, data):
+    def get_location(self, string):
         """ Load location from string. """
-        v = iter(np.fromstring(location[self.location], dtype=np.int64))
-        return tuple(dimensions.Location(level=v.next(),                                   
-                                         indices=tuple(v.next() 
-                                                       for n in range(d.M)))
-                     for d in self.dimensions)
+        v = iter(np.fromstring(data[self.location], dtype=np.int64))
+        return Location(
+            parts=tuple(SubLocation(level=v.next(),                                   
+                                    indices=tuple(v.next() for size in scale))
+                        for scale in self.metric.scales),
+            )
 
-    def extract_scales(self, data):
+    def get__axes(self, string):
         """ Get the scales in the data. """
-        return 'scales'
+        return np.fromstring(data[self.axes])
 
-    def extract_array(self, data):
+    def get_data(self, string):
         """ Get the array in the data. """
-        return np.ma.array(np.ma.masked_equal(
-            fromstring(data[self.data], dtype=self.dtype),
+        result = np.ma.array(np.ma.masked_equal(
+            np.fromstring(data[self.data],
+                          dtype=self.dtype),
             self.nodatavalue,
-        ))
+            copy=False,
+        )).reshape(*self.shape)
+        result.fill_value = self.fill_value
+        return result
 
-    def to_dataset(self, data):
-        """ Return a dataset corresponding to data. """
-        return Dataset(
-            extent=self.extract_location(data).extent,
-            scales=self.extract_scales(data),
-            data=self.extract_array(data),
-        )
+    def get_saved_dataset(self, string):
+        """ Create a dataset from a string. """
+        location = self.to_location(string)
+        metric = self.get_metric(location)
+        axes = self.to_axes(string)
+        data = self.to_data(string)
+        return Dataset(metric=metric, axes=axes, data=data)
 
     def get_empty_dataset(self, location):
-        """ Return an empty dataset. """
-        return Dataset(
-            extent=self.metric.get_extent(location),
-            scales=[],
-            data=np.ma.masked_all(self.metric.shape, self.dtype)
-        )
-
-    def to_string(dataset):
-        pass
-        
+        metric = self.get_metric(location)
+        axes = tuple()
+        data = np.ma.masked_all(self.shape, self.dtype)
+        data.fill_value = self.nodatavalue
+        return Dataset(metric=metric, axes=axes, data=data)
 
     def get_locations(self, extent, size):
         """
@@ -329,9 +339,28 @@ class Frame(object):
 # Datasets
 # -----------------------------------------------------------------------------
 class Dataset(object):
-    def __init__(self, extent, scales, data):
+    def __init__(self, metric, axes, data):
         """ 
         """
-        self.extent = extent
-        self.scales = scales
+        self.metric = metric
+        self.axes = axes
         self.data = data
+
+class SerializableDataset(Dataset):
+    """ Dataset with a location attribute and a tostring() method. """
+    
+    def __init__(self, location, *args, **kwargs):
+        self.location = location
+        super(SerializableDataset, self).__init__(*args, **kwargs)
+
+    def tostring():
+        """ Return serialized dataset string. """
+        return ''.join(*([self.location.tostring()] +
+                         [n.tostring() 
+                          for n in self.axis] + 
+                         [self.data.filled().tostring()]))
+        
+
+        
+        
+

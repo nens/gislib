@@ -13,7 +13,7 @@ import unittest
 
 import numpy as np
 
-from gislib.store import structures
+from gislib.store import core
 from gislib.store import storages
 from gislib.store import stores
 
@@ -24,11 +24,10 @@ class TestStorage(unittest.TestCase):
         # Create store
         self.tempdir = tempfile.mkdtemp()
         storage = storages.FileStorage(self.tempdir)
-        frame = structures.Frame(
-            dimensions=[],
-            dtype='f4',
-            nodatavalue=np.finfo('f4').min,
-        )
+        metric = core.FrameMetric(scales=[])
+        frame = core.Frame(metric=metric,
+                           dtype='f4',
+                           nodatavalue=np.finfo('f4').min)
         self.store = stores.Store(storage=storage, frame=frame)
 
     def tearDown(self):

@@ -49,11 +49,7 @@ class Store(object):
         """ Return dataset generator. """
         for location in self.frame.get_locations(extent, size):
             try:
-                data = self.databox[location.key]
-                yield self.frame.to_dataset(data)
+                string = self.databox[location.key]
+                yield self.frame.get_saved_dataset(string=string)
             except KeyError:
-                yield self.frame.get_empty_dataset(location)
-
-                
-                
-        
+                yield self.frame.get_empty_dataset(location=location)

@@ -10,35 +10,34 @@ import unittest
 
 import numpy as np
 
-from gislib.store import structures
+from gislib.store import core
 
 
 class TestStructure(unittest.TestCase):
     """ Integration tests. """
     def setUp(self):
-        self.frame = structures.Frame(
-            dimensions=[
-                structures.SpatialDimension(projection=28992, size=256),
-                structures.TimeDimension(size=1,
-                                         calendar='minutes since 200130401'),
-            ],
-            dtype='f4',
-            nodatavalue=np.finfo('f4').min,
-        )
+        spatial_scale = core.SpatialScale(projection=28992, size=(256, 256))
+        time_scale = core.TimeScale(size=(1,),
+                                    calendar='minutes since 20130401')
+        scales = [core.FrameScale(spatial_scale), core.FrameScale(time_scale)]
+        metric = core.FrameMetric(scales=scales)
+        self.frame = core.Frame(metric=metric,
+                                dtype='f4',
+                                nodatavalue=np.finfo('f4').min)
 
     def test_extent(self):
-        location = structures.Location(frame=self.frame, sublocations=(
-            structures.Sublocation(level=1, indices=(1, 1)),
-            structures.Sublocation(level=1, indices=(1,)),
+        location = core.Location(parts=(
+            core.Sublocation(level=1, indices=(1, 1)),
+            core.Sublocation(level=1, indices=(1,)),
         ))
         expected_extent = (
             ((512, 512), (1024, 1024)),
             ((2,), (4,)),
         )
-        computed_extent = location.get_extent()
+        computed_extent = self.frame.metric.get_extent(location)
         self.assertEqual(computed_extent, expected_extent)
         computed_locations = list(self.frame.get_locations(
-            computed_extent, (128, 0.5)
+            computed_extent, size=((256, 256), (1,))
         ))
         self.assertEqual(len(computed_locations), 1)
         self.assertEqual(computed_locations[0], location)

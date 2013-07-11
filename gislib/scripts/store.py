@@ -23,6 +23,7 @@ Commandline tool for working with nens/gislib stores.
 logging.root.level = logging.DEBUG
 logger = logging.getLogger(__name__)
 
+
 def get_parser():
     """ Return argument parser. """
     parser = argparse.ArgumentParser(
@@ -38,7 +39,7 @@ def get_parser():
 def command(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
-    spatial_scale = core.SpatialScale(projection=28992, size=(256,256))
+    spatial_scale = core.SpatialScale(projection=28992, size=(256, 256))
     time_scale = core.TimeScale(calendar='minutes since 20130401', size=(1,))
     scales = [core.FrameScale(spatial_scale), core.FrameScale(time_scale)]
     metric = core.FrameMetric(scales=scales)
@@ -56,10 +57,10 @@ def command(targetpath, sourcepaths):
         core.Sublocation(level=1, indices=(1, 1)),
         core.Sublocation(level=1, indices=(1,)),
     ))
-    for dataset in store.get_datasets(extent=metric.get_extent(location), 
+    for dataset in store.get_datasets(extent=metric.get_extent(location),
                                       size=metric.size):
+        import ipdb; ipdb.set_trace() 
         print(dataset.data)
-
 
 
 def main():
