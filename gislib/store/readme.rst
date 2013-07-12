@@ -3,42 +3,57 @@ Datastore for gridded data
 
 Todo
 ----
+Pitch:
+- Just show data adding and retrieving, and converting to another store
+  optimized for timeseries.
+- Simple retrieving should work as long as you know where the data is.
+  Do something with AHN2 to show the speed, or radar too.
+- Configuring a store is tedious. Make json templates:
+    - AHN2
+    - Radar
 
 Testing:
 - Lower level storage tests
 - Lower level tests for scales and metrics.
 
-Make datasets function:
-- 'Reproject' data into it
-- Put it back
+Naming:
+- SpatialDimension => domains.Raster
+- TimeDimension => domains.Time
+- UnitDimension => domains.Quantity
 
-Pitch:
-- Just show data adding and retrieving, and converting to another store
-  optimized for timeseries.
-- Configuring a store is tedious. Make json templates.
+- FrameDimension => frames.Domain
+- DatasetDimension => datasets.Domain
+- FrameMetric => frames.Config
+- DatasetMetric => datasets.Config
 
-Converters:
-- Take care of getting data from one dataset to another with similar structures.
-- Inspects structures to see how data must go from one to another
-- For example: NearestNeigbourConverter
+Conversion
+- converters.Raster
+- converters.Time
+- converters.Global?
+- converters.DouglasPuecker
+- converters.NearestNeighbour
 
 Aggregators:
 - Take care of lining up the right datasets and using the right converters.
-
 
 Adapters:
 - Put various formats into our structure format (for example gdal)
 - Get various formats from our structure format
 
-1 Data erin (doen)
-2 Data eruit (doen)
-3 Aggregatie (denken)
-4 Metadata
+
+Roadmap
+-------
+- Conversion gdal => dataset => image.
+- Make demo page to demonstrate fast image retrieval
+- 'fill method' to fill datasets with same dimensions, but different calendars, projections, etc.
+- Multiprocessed addition of datasets.
+- Aggregation (denken)
+- Metadata
+- Non-equidistant
 
 - Do we need to always query for the top chunk? No!
     - Only when aggregating
     - Investigate for get_root vs just trying all datasets at a level.
-
 
 Datatructure
 ============
@@ -46,24 +61,24 @@ Store
     (Aggregators)
     Storage
     Frame
-        FrameMetric
+        FrameConfig
             FrameScale(dimension, offset, scale, factor)
             FrameScale...
             ...
 
 Dataset
-    DatasetMetric
-        DatasetScale(dimension, extent)
-        DatasetScale...
+    Config
+        Domain(dimension, extent)
+        Domain...
         ...
     Axes
     Data
 
-Location becomes just a container. Ask your FrameMetric for the extent of a location, or the root, or the parents or children.
+Location becomes just a container. Ask your frame config for the extent
+of a location, or the root, or the parents or children.
 
 Aggregation system
 ------------------
-
 - Aggregation:
     - Aggregate up to the level where there is only one pixel or datavalue left in the block.
     - A base aggregator stores no data, but stores the location.
