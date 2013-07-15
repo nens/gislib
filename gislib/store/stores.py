@@ -53,3 +53,19 @@ class Store(object):
                 yield self.frame.get_saved_dataset(string=string)
             except KeyError:
                 yield self.frame.get_empty_dataset(location=location)
+
+
+    def add_from(self, datasets):
+        """
+        Put data in the store from an iterable of datasets.
+
+        This must employ multiprocessing.
+        """
+        pass
+
+    def fill_into(self, dataset):
+        """
+        Fill dataset with data from the store.
+        """
+        pass
+    

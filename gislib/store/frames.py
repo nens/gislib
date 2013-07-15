@@ -12,9 +12,9 @@ import math
 
 import numpy as np
 
-# =============================================================================
-# Locations
-# -----------------------------------------------------------------------------
+from gislib.store import configs
+from gislib.store import datasets
+
 Sublocation = collections.namedtuple('Sublocation', ('level', 'indices'))
 
 
@@ -40,27 +40,14 @@ class Location(object):
         return self.tostring() == location.tostring()
 
 
-# =============================================================================
-# Scales
-# -----------------------------------------------------------------------------
-
-# A number of scales for various purposes
-UnitScale = collections.namedtuple('UnitScale', ('size',))
-TimeScale = collections.namedtuple('TimeScale', ('size', 'calendar'))
-SpatialScale = collections.namedtuple('SpatialScale', ('size', 'projection'))
-
-# A single-scale container with an extent
-DatasetScale = collections.namedtuple('DatasetScale', ('scale', 'extent'))
-
-
-class FrameScale(object):
-    """ A scale combined with offset, scale and base. """
-    def __init__(self, scale, offset=None, factor=None, base=2):
+class Domain(object):
+    """ A domain combined with offset, domain and base. """
+    def __init__(self, domain, offset=None, factor=None, base=2):
         self.base = base  # resolution ratio between levels
-        self.scale = scale
-        multiplicity = len(scale.size)
-        
-        # Scale factor with respect to the base unit
+        self.domain = domain
+        multiplicity = len(domain.size)
+
+        # Domain factor with respect to the base unit
         if factor is None:
             self.factor = (1,) * multiplicity
         else:
@@ -74,8 +61,8 @@ class FrameScale(object):
 
     def __iter__(self):
         """ Convenience for the deserialization of locations. """
-        return (None for s in self.scale.size)
-    
+        return (None for s in self.domain.size)
+
     def get_level(self, extent, size):
         """
         Return integer.
@@ -97,66 +84,48 @@ class FrameScale(object):
         A format for a 2D-extent: ((x1, y1), (x2, y2))
         """
         return tuple(tuple((self.base ** sublocation.level *
-                            self.scale.size[i] *
+                            self.domain.size[i] *
                             (sublocation.indices[i] + j) + self.offset[i])
                            for i in range(len(sublocation.indices)))
                      for j in (0, 1))
 
     def get_sublocations(self, extent, level):
-        """ 
+        """
         Return a function that, when called, returns a generator of locations.
 
         Why a function? So reduce() can be used to iterate over all the
-        locations of all the scales of the enclosing structure.
+        locations of all the domains of the enclosing structure.
 
         If resolution does not exactly match, locations for the next
         matching higher resolutions are returned.
         """
         # Determine the block span at requested level
-        span = tuple(self.base **level * s * f
-                     for s, f in zip(self.scale.size, self.factor))
+        span = tuple(self.base ** level * s * f
+                     for s, f in zip(self.domain.size, self.factor))
         # Determine the ranges for the indices
         irange = map(
             xrange,
             (int(math.floor((e - o) / s))
-                 for e, o, s in zip(extent[0], self.offset, span)),
+             for e, o, s in zip(extent[0], self.offset, span)),
             (int(math.ceil((e - o) / s))
-                 for e, o, s in zip(extent[1], self.offset, span)),
+             for e, o, s in zip(extent[1], self.offset, span)),
         )
-        
+
         # Prepare for reduce by creating a list of functions
         funcs = [lambda: ((i, ) for i in r) for r in irange]
 
-        # Reduce by nesting the generators, combine with level and return again a function.
+        # Reduce by nesting the generators, combine with level and return
+        # again a function.
         def reducer(f1, f2):
             return lambda: (i + j for j in f2() for i in f1())
 
-        # Combine the (sub)scales and return a function
-        return lambda: (Sublocation(level=level, indices=indices) 
+        # Combine the (sub)domains and return a function
+        return lambda: (Sublocation(level=level, indices=indices)
                         for indices in reduce(reducer, funcs)())
 
 
-# =============================================================================
-# Metrics
-# -----------------------------------------------------------------------------
-class BaseMetric(object):
-    def __init__(self, scales):
-        self.scales = scales
-
-
-    @property
-    def size(self):
-        return tuple(s.scale.size for s in self.scales)
-    
-    @property
-    def shape(self):
-        return tuple(j for i in self.size for j in i)
-        
-class DatasetMetric(BaseMetric):
-    """ Collection of dataset scales. """
-
-class FrameMetric(BaseMetric):
-    """ Collection of frame scales. """
+class Config(configs.Config):
+    """ Collection of frame domains. """
 
     # =========================================================================
     # Location navigation
@@ -164,26 +133,26 @@ class FrameMetric(BaseMetric):
     def get_extent(self, location):
         """ Return extent tuple. """
         return tuple(d.get_extent(s)
-                     for s, d in zip(location.parts, self.scales))
+                     for s, d in zip(location.parts, self.domains))
 
-    def get_metric(self, location):
-        """ Return dataset metric. """
+    def get_config(self, location):
+        """ Return dataset config. """
         extent = self.get_extent(location)
-        scales = [DatasetScale(scale=s.scale, extent=e)
-                  for s, e in zip(self.scales, extent)]
-        return DatasetMetric(scales=self.scales)
+        domains = [datasets.Domain(domain=s.domain, extent=e)
+                   for s, e in zip(self.domains, extent)]
+        return datasets.Config(domains=domains)
 
     def get_parent(self, location, axis=0, levels=1):
-        """ 
+        """
         Return a location.
 
         location: location for which to return the parent
-        axis: Index into self.scales
+        axis: Index into self.domains
         levels: Amount of level to traverse
         """
         level = location.parts[axis].level + levels
         extent = self.get_extent(location)[axis]
-        insert = self.scales[axis].get_sublocations(
+        insert = self.domains[axis].get_sublocations(
             extent=extent, level=level,
         )().next(),
 
@@ -204,7 +173,7 @@ class FrameMetric(BaseMetric):
             yield Location(frame=self, sublocations=sublocations)
 
     def get_root(self, func):
-        """ 
+        """
         Return the root chunk. It only works if the data is fully
         aggregated in all dimensions to a single chunk at the highest
         level.
@@ -226,7 +195,8 @@ class FrameMetric(BaseMetric):
                     break
                 end = end * 2
             while end - begin != 1:
-                # Now begin testing the middle of end until end - begin == 1 again.
+                # Now begin testing the middle of end until
+                # end - begin == 1 again.
                 middle = (begin + end) // 2
                 try:
                     root.get_parent(dimension=i, levels=middle)[self.DATA]
@@ -243,19 +213,19 @@ class FrameMetric(BaseMetric):
 # Frames
 # -----------------------------------------------------------------------------
 class Frame(object):
-    def __init__(self, metric, dtype, nodatavalue):
+    def __init__(self, config, dtype, nodatavalue):
         """
         For ned dimensions, need to add a dtype per ned dimension (or
         even multiple, consider the case of ned 3d space). Then the
         specified datatype must be prepended by the parameters into the
         ned interval.
         """
-        self.metric = metric
+        self.config = config
         self.dtype = dtype  # Any pickleable numpy dtype object will do.
         self.nodatavalue = nodatavalue  # Also used to identify NED removals.
 
         # Slices to acces binary data
-        axis = 8 * sum(1 + len(f.scale.size) for f in self.metric.scales)
+        axis = 8 * sum(1 + len(f.domain.size) for f in self.config.domains)
         data = axis  # No (ned) axis currently.
         self.location = slice(axis)
         self.axes = slice(axis, data)
@@ -265,33 +235,33 @@ class Frame(object):
     def size(self):
         """ Return bytesize. """
         return self.dtype.itemsize * np.prod(self.shape)
-    
+
     @property
     def shape(self):
         """ Return numpy shape. """
-        return self.metric.shape
+        return self.config.shape
 
-    def get_metric(self, location):
+    def get_config(self, location):
         """ Convenience method. """
-        return self.metric.get_metric(location)
+        return self.config.get_config(location)
 
     def get_location(self, string):
         """ Load location from string. """
-        v = iter(np.fromstring(data[self.location], dtype=np.int64))
+        v = iter(np.fromstring(string[self.location], dtype=np.int64))
         return Location(
-            parts=tuple(SubLocation(level=v.next(),                                   
-                                    indices=tuple(v.next() for size in scale))
-                        for scale in self.metric.scales),
-            )
+            parts=tuple(Sublocation(level=v.next(),
+                                    indices=tuple(v.next() for size in domain))
+                        for domain in self.config.domains),
+        )
 
-    def get__axes(self, string):
-        """ Get the scales in the data. """
-        return np.fromstring(data[self.axes])
+    def get_axes(self, string):
+        """ Get the domains in the data. """
+        return np.fromstring(string[self.axes])
 
     def get_data(self, string):
         """ Get the array in the data. """
         result = np.ma.array(np.ma.masked_equal(
-            np.fromstring(data[self.data],
+            np.fromstring(string[self.data],
                           dtype=self.dtype),
             self.nodatavalue,
             copy=False,
@@ -302,17 +272,17 @@ class Frame(object):
     def get_saved_dataset(self, string):
         """ Create a dataset from a string. """
         location = self.to_location(string)
-        metric = self.get_metric(location)
+        config = self.get_config(location)
         axes = self.to_axes(string)
         data = self.to_data(string)
-        return Dataset(metric=metric, axes=axes, data=data)
+        return datasets.Dataset(config=config, axes=axes, data=data)
 
     def get_empty_dataset(self, location):
-        metric = self.get_metric(location)
+        config = self.get_config(location)
         axes = tuple()
         data = np.ma.masked_all(self.shape, self.dtype)
         data.fill_value = self.nodatavalue
-        return Dataset(metric=metric, axes=axes, data=data)
+        return datasets.Dataset(config=config, axes=axes, data=data)
 
     def get_locations(self, extent, size):
         """
@@ -320,47 +290,16 @@ class Frame(object):
         """
         # Coerce resolutions to levels
         level = tuple(d.get_level(e, s)
-                      for d, e, s in zip(self.metric.scales, extent, size))
+                      for d, e, s in zip(self.config.domains, extent, size))
 
         # Get the funcs that return the per-dimension sublocation generators
         funcs = (s.get_sublocations(e, l)
-                 for s, e, l in zip(self.metric.scales, extent, level))
+                 for s, e, l in zip(self.config.domains, extent, level))
 
         # Nest via reduce function
         def reducer(f1, f2):
-            return lambda: ((i,) + (j,) 
+            return lambda: ((i,) + (j,)
                             for j in f2() for i in f1())
-        
+
         return (Location(parts=parts)
                 for parts in reduce(reducer, funcs)())
-
-
-# =============================================================================
-# Datasets
-# -----------------------------------------------------------------------------
-class Dataset(object):
-    def __init__(self, metric, axes, data):
-        """ 
-        """
-        self.metric = metric
-        self.axes = axes
-        self.data = data
-
-class SerializableDataset(Dataset):
-    """ Dataset with a location attribute and a tostring() method. """
-    
-    def __init__(self, location, *args, **kwargs):
-        self.location = location
-        super(SerializableDataset, self).__init__(*args, **kwargs)
-
-    def tostring():
-        """ Return serialized dataset string. """
-        return ''.join(*([self.location.tostring()] +
-                         [n.tostring() 
-                          for n in self.axis] + 
-                         [self.data.filled().tostring()]))
-        
-
-        
-        
-

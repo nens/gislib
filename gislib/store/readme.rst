@@ -1,37 +1,50 @@
 Datastore for gridded data
 ==========================
 
-Todo
-----
-Pitch:
-- Just show data adding and retrieving, and converting to another store
-  optimized for timeseries.
-- Simple retrieving should work as long as you know where the data is.
-  Do something with AHN2 to show the speed, or radar too.
-- Configuring a store is tedious. Make json templates:
+Roadmap
+-------
+We have a lowlevel storage facility. It must have some config:
+    - What domain (time, spatial, etc.)
+    - What transformers?
+    - What aggregators?
+
+    def add_from(self, datasets) (iterable for datasets)
+    def fill_to dataset(self, datasets)
+    def add_aggregator(self, aggregator, domain, name?)
+    def remove_aggregator(self, name?)
+
+
+
+To do next:
+- Basic dataset transformer to be able to put and read any extent of same domain
+
+At that point we can do the pitch:
+- Data addition to baselevel at arbitrary extent
+- Data retrieval from baselevel at arbitrary extent
+- Addition to other store
+- Web interface for quick browsing the images.
+- Would be great to have backwards radar animation.
+
+And then continue with:
+- Multiprocessed addition of datasets
+- Configuring a store is tedious. Make json templates.
     - AHN2
     - Radar
+- Advanced dataset transformer to enable multiple calendars and projections
+    - converters.Raster
+    - converters.Time
+    - converters.Generic
+    - converters.DouglasPuecker
+    - converters.NearestNeighbour
+    - converters.CompleteDomainConverter?
+- Add support for non-equidistant data
+- Add aggregation framework
+- Add metadata framework
 
 Testing:
 - Lower level storage tests
 - Lower level tests for scales and metrics.
 
-Naming:
-- SpatialDimension => domains.Raster
-- TimeDimension => domains.Time
-- UnitDimension => domains.Quantity
-
-- FrameDimension => frames.Domain
-- DatasetDimension => datasets.Domain
-- FrameMetric => frames.Config
-- DatasetMetric => datasets.Config
-
-Conversion
-- converters.Raster
-- converters.Time
-- converters.Global?
-- converters.DouglasPuecker
-- converters.NearestNeighbour
 
 Aggregators:
 - Take care of lining up the right datasets and using the right converters.
@@ -41,15 +54,6 @@ Adapters:
 - Get various formats from our structure format
 
 
-Roadmap
--------
-- Conversion gdal => dataset => image.
-- Make demo page to demonstrate fast image retrieval
-- 'fill method' to fill datasets with same dimensions, but different calendars, projections, etc.
-- Multiprocessed addition of datasets.
-- Aggregation (denken)
-- Metadata
-- Non-equidistant
 
 - Do we need to always query for the top chunk? No!
     - Only when aggregating
