@@ -112,12 +112,7 @@ class Domain(object):
         )
 
         # Prepare for reduce by creating a list of functions
-        funcs = [(lambda: ((i, ) for i in r)) for r in irange]
-        funcs = []
-        for r in irange:
-            funcs.append(lambda: (i, ) for i in r)
-        print([list(f()) for f in funcs])
-        exit()
+        funcs = [lambda: ((i, ) for i in r) for r in irange]
 
         # Reduce by nesting the generators, combine with level and return
         # again a function.
