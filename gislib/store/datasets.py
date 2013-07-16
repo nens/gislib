@@ -8,16 +8,24 @@ from __future__ import division
 
 import collections
 
-from gislib.store import configs
+Domain = collections.namedtuple('Domain', ('domain', 'extent', 'size'))
 
-Domain = collections.namedtuple('Domain', ('domain', 'extent'))
+def reproject(source, target):
+    import ipdb; ipdb.set_trace() 
 
 
-class Config(configs.Config):
+class Config(object):
     """ Collection of dataset scales. """
+    def __init__(self, domains):
+        self.domains = domains
+
     @property
     def extent(self):
         return tuple(d.extent for d in self.domains)
+    
+    @property
+    def size(self):
+        return tuple(d.size for d in self.domains)
 
 
 class Dataset(object):
@@ -38,9 +46,9 @@ class SerializableDataset(Dataset):
 
     def tostring(self):
         """ Return serialized dataset string. """
-        return ''.join(*([self.location.tostring()] +
+        return b''.join(([self.location.tostring()] +
                          [n.tostring()
-                          for n in self.axis] +
+                          for n in self.axes] +
                          [self.data.filled().tostring()]))
 
 

@@ -12,7 +12,6 @@ import math
 
 import numpy as np
 
-from gislib.store import configs
 from gislib.store import datasets
 
 Sublocation = collections.namedtuple('Sublocation', ('level', 'indices'))
@@ -42,10 +41,11 @@ class Location(object):
 
 class Domain(object):
     """ A domain combined with offset, domain and base. """
-    def __init__(self, domain, offset=None, factor=None, base=2):
+    def __init__(self, domain, size, offset=None, factor=None, base=2):
         self.base = base  # resolution ratio between levels
         self.domain = domain
-        multiplicity = len(domain.size)
+        self.size = size
+        multiplicity = len(size)
 
         # Domain factor with respect to the base unit
         if factor is None:
@@ -61,7 +61,7 @@ class Domain(object):
 
     def __iter__(self):
         """ Convenience for the deserialization of locations. """
-        return (None for s in self.domain.size)
+        return (None for s in self.size)
 
     def get_level(self, extent, size):
         """
@@ -84,7 +84,7 @@ class Domain(object):
         A format for a 2D-extent: ((x1, y1), (x2, y2))
         """
         return tuple(tuple((self.base ** sublocation.level *
-                            self.domain.size[i] *
+                            self.size[i] *
                             (sublocation.indices[i] + j) + self.offset[i])
                            for i in range(len(sublocation.indices)))
                      for j in (0, 1))
@@ -101,7 +101,7 @@ class Domain(object):
         """
         # Determine the block span at requested level
         span = tuple(self.base ** level * s * f
-                     for s, f in zip(self.domain.size, self.factor))
+                     for s, f in zip(self.size, self.factor))
         # Determine the ranges for the indices
         irange = map(
             xrange,
@@ -112,7 +112,12 @@ class Domain(object):
         )
 
         # Prepare for reduce by creating a list of functions
-        funcs = [lambda: ((i, ) for i in r) for r in irange]
+        funcs = [(lambda: ((i, ) for i in r)) for r in irange]
+        funcs = []
+        for r in irange:
+            funcs.append(lambda: (i, ) for i in r)
+        print([list(f()) for f in funcs])
+        exit()
 
         # Reduce by nesting the generators, combine with level and return
         # again a function.
@@ -124,12 +129,20 @@ class Domain(object):
                         for indices in reduce(reducer, funcs)())
 
 
-class Config(configs.Config):
+class Config(object):
     """ Collection of frame domains. """
 
-    # =========================================================================
-    # Location navigation
-    # -------------------------------------------------------------------------
+    def __init__(self, domains):
+        self.domains = domains
+
+    @property
+    def size(self):
+        return tuple(d.size for d in self.domains)
+
+    @property
+    def shape(self):
+        return tuple(j for i in self.size for j in i)
+
     def get_extent(self, location):
         """ Return extent tuple. """
         return tuple(d.get_extent(s)
@@ -138,10 +151,13 @@ class Config(configs.Config):
     def get_config(self, location):
         """ Return dataset config. """
         extent = self.get_extent(location)
-        domains = [datasets.Domain(domain=s.domain, extent=e)
-                   for s, e in zip(self.domains, extent)]
+        domains = [datasets.Domain(domain=d.domain, extent=e, size=s)
+                   for d, s, e in zip(self.domains, self.size, extent)]
         return datasets.Config(domains=domains)
 
+    # =========================================================================
+    # Location navigation
+    # -------------------------------------------------------------------------
     def get_parent(self, location, axis=0, levels=1):
         """
         Return a location.
@@ -213,7 +229,7 @@ class Config(configs.Config):
 # Frames
 # -----------------------------------------------------------------------------
 class Frame(object):
-    def __init__(self, config, dtype, nodatavalue):
+    def __init__(self, config, dtype, fill_value):
         """
         For ned dimensions, need to add a dtype per ned dimension (or
         even multiple, consider the case of ned 3d space). Then the
@@ -222,10 +238,10 @@ class Frame(object):
         """
         self.config = config
         self.dtype = dtype  # Any pickleable numpy dtype object will do.
-        self.nodatavalue = nodatavalue  # Also used to identify NED removals.
+        self.fill_value = fill_value  # Also used to identify NED removals.
 
         # Slices to acces binary data
-        axis = 8 * sum(1 + len(f.domain.size) for f in self.config.domains)
+        axis = 8 * sum(1 + len(f.size) for f in self.config.domains)
         data = axis  # No (ned) axis currently.
         self.location = slice(axis)
         self.axes = slice(axis, data)
@@ -240,6 +256,13 @@ class Frame(object):
     def shape(self):
         """ Return numpy shape. """
         return self.config.shape
+
+    @property
+    def empty(self):
+        """ Return empty masked array. """
+        data = np.ma.masked_all(self.shape, self.dtype)
+        data.fill_value = self.fill_value
+        return data
 
     def get_config(self, location):
         """ Convenience method. """
@@ -263,7 +286,7 @@ class Frame(object):
         result = np.ma.array(np.ma.masked_equal(
             np.fromstring(string[self.data],
                           dtype=self.dtype),
-            self.nodatavalue,
+            self.fill_value,
             copy=False,
         )).reshape(*self.shape)
         result.fill_value = self.fill_value
@@ -271,23 +294,33 @@ class Frame(object):
 
     def get_saved_dataset(self, string):
         """ Create a dataset from a string. """
-        location = self.to_location(string)
-        config = self.get_config(location)
-        axes = self.to_axes(string)
-        data = self.to_data(string)
-        return datasets.Dataset(config=config, axes=axes, data=data)
+        if string == string[self.location]:
+            raise ValueError('No data found beyond location')
+        location = self.get_location(string)
+        dataset_kwargs = dict(
+            location=location,
+            config=self.get_config(location),
+            axes=self.get_axes(string),
+            data=self.get_data(string),
+        )
+        return datasets.SerializableDataset(**dataset_kwargs)
 
     def get_empty_dataset(self, location):
-        config = self.get_config(location)
-        axes = tuple()
-        data = np.ma.masked_all(self.shape, self.dtype)
-        data.fill_value = self.nodatavalue
-        return datasets.Dataset(config=config, axes=axes, data=data)
+        """ Return empty dataset for location. """
+        dataset_kwargs = dict(
+            location=location,
+            config=self.get_config(location),
+            axes=tuple(),
+            data=self.empty,
+        )
+        return datasets.SerializableDataset(**dataset_kwargs)
 
-    def get_locations(self, extent, size):
+    def get_locations(self, config):
         """
         Return a generator of location tuples.
         """
+        extent = config.extent
+        size = config.size
         # Coerce resolutions to levels
         level = tuple(d.get_level(e, s)
                       for d, e, s in zip(self.config.domains, extent, size))

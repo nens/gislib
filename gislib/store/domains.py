@@ -9,6 +9,6 @@ from __future__ import division
 import collections
 
 # A number of domains for various purposes
-General = collections.namedtuple('General', ('size',))
-Time = collections.namedtuple('Time', ('size', 'calendar'))
-Space = collections.namedtuple('Space', ('size', 'projection'))
+
+Time = collections.namedtuple('Time', ('calendar'))
+Space = collections.namedtuple('Space', ('projection'))

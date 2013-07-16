@@ -15,6 +15,7 @@ import numpy as np
 from gislib.store import domains
 from gislib.store import frames
 from gislib.store import stores
+from gislib.store import adapters
 from gislib.store import storages
 
 description = """
@@ -40,15 +41,15 @@ def get_parser():
 def command(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
-    spatial_domain = domains.Space(projection=28992, size=(256, 256))
-    time_domain = domains.Time(calendar='minutes since 20130401', size=(1,))
+    spatial_domain = domains.Space(projection=28992)
+    time_domain = domains.Time(calendar='minutes since 20130401')
     config = frames.Config(domains=[
-        frames.Domain(spatial_domain),
-        frames.Domain(time_domain)],
+        frames.Domain(domain=spatial_domain, size=(500, 500)),
+        frames.Domain(domain=time_domain, size=(1,))],
     )
     frame = frames.Frame(config=config,
                          dtype='f4',
-                         nodatavalue=np.finfo('f4').min)
+                         fill_value=np.finfo('f4').min)
 
     try:
         shutil.rmtree(targetpath)
@@ -56,13 +57,9 @@ def command(targetpath, sourcepaths):
         pass
 
     store = stores.Store(storage=storage, frame=frame)
-    location = frames.Location(parts=(
-        frames.Sublocation(level=1, indices=(1, 1)),
-        frames.Sublocation(level=1, indices=(1,)),
-    ))
-    for dataset in store.get_datasets(extent=config.get_extent(location),
-                                      size=((256, 256), (32,))):
-        print(dataset.config.extent)
+    adapter = adapters.GDALAdapter(sourcepaths=sourcepaths)
+    store.add_from(adapter=adapter)
+        
 
 
 def main():

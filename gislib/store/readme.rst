@@ -8,13 +8,6 @@ We have a lowlevel storage facility. It must have some config:
     - What transformers?
     - What aggregators?
 
-    def add_from(self, datasets) (iterable for datasets)
-    def fill_to dataset(self, datasets)
-    def add_aggregator(self, aggregator, domain, name?)
-    def remove_aggregator(self, name?)
-
-
-
 To do next:
 - Basic dataset transformer to be able to put and read any extent of same domain
 
@@ -28,6 +21,7 @@ At that point we can do the pitch:
 And then continue with:
 - Multiprocessed addition of datasets
 - Configuring a store is tedious. Make json templates.
+    - Use class based configuration, so that inheritance can be used for configuration?
     - AHN2
     - Radar
 - Advanced dataset transformer to enable multiple calendars and projections
