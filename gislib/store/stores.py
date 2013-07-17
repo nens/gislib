@@ -20,7 +20,7 @@ def process(job):
     target = job['store'].get_dataset(job['location'])
     for source in job['adapter'].get_datasets():
         datasets.reproject(source, target)
-    job['store'].put_dataset(job['location'], target)
+        job['store'].put_dataset(job['location'], target)
 
 
 class Store(object):
@@ -90,7 +90,6 @@ class Store(object):
         sourcepaths = collections.defaultdict(list)
         for sourcepath, config in adapter.get_configs():
             for location in self.frame.get_locations(config=config):
-                print(location)
                 sourcepaths[location].append(sourcepath)
 
         # Add using multiprocessing
@@ -102,8 +101,8 @@ class Store(object):
         #pool = multiprocessing.Pool()
         #pool.map(process, jobs)
         #pool.close()
-        #for job in jobs:
-            #process(job)
+        for job in jobs:
+            process(job)
             
 
     def fill_into(self, dataset):

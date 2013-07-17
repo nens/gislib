@@ -27,7 +27,9 @@ class GDALAdapter(object):
             gdal_dataset.ReadAsArray(),
             gdal_dataset.GetRasterBand(1).GetNoDataValue(),
             copy=False,
-        )
+        ).reshape(-1,
+                  gdal_dataset.RasterXSize,
+                  gdal_dataset.RasterYSize).transpose(1, 2, 0)
 
     def get_axes(self, gdal_dataset):
         return tuple()

@@ -112,12 +112,14 @@ class Domain(object):
         )
 
         # Prepare for reduce by creating a list of functions
-        funcs = [lambda: ((i, ) for i in r) for r in irange]
+        get_func = lambda r: lambda:((i,) for i in r)
+        funcs = [get_func(r) for r in irange]
 
         # Reduce by nesting the generators, combine with level and return
         # again a function.
         def reducer(f1, f2):
             return lambda: (i + j for j in f2() for i in f1())
+
 
         # Combine the (sub)domains and return a function
         return lambda: (Sublocation(level=level, indices=indices)

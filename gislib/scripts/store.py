@@ -44,7 +44,7 @@ def command(targetpath, sourcepaths):
     spatial_domain = domains.Space(projection=28992)
     time_domain = domains.Time(calendar='minutes since 20130401')
     config = frames.Config(domains=[
-        frames.Domain(domain=spatial_domain, size=(500, 500)),
+        frames.Domain(domain=spatial_domain, size=(256, 256)),
         frames.Domain(domain=time_domain, size=(1,))],
     )
     frame = frames.Frame(config=config,
