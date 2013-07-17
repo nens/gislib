@@ -69,7 +69,7 @@ class Store(object):
         except ValueError:
             return self.frame.get_location(string=string)
         except KeyError:
-            return self.frame.get_empty_dataset(location=location)
+            return self.frame.get_empty_dataset_for_location(location=location)
 
     def put_dataset(self, location, dataset):
         """
@@ -89,7 +89,7 @@ class Store(object):
         # Sort jobs
         sourcepaths = collections.defaultdict(list)
         for sourcepath, config in adapter.get_configs():
-            for location in self.frame.get_locations(config=config):
+            for location in self.frame.config.get_locations(config=config):
                 sourcepaths[location].append(sourcepath)
 
         # Add using multiprocessing
@@ -98,16 +98,19 @@ class Store(object):
                      location=location,
                      adapter=Adapter(sourcepaths=sourcepaths[location]))
                 for location in sourcepaths)
-        #pool = multiprocessing.Pool()
-        #pool.map(process, jobs)
-        #pool.close()
-        for job in jobs:
-            process(job)
+        pool = multiprocessing.Pool()
+        pool.map(process, jobs)
+        pool.close()
+        #for job in jobs:
+            #process(job)
             
 
     def fill_into(self, dataset):
         """
         Fill dataset with data from the store.
         """
-        pass
-    
+        for location in self.frame.config.get_locations(dataset.config):
+            string = self.databox[location.key]
+            t = self.get_dataset(location)
+            datasets.reproject(t, dataset)
+            #datasets.reproject(self.get_dataset(location), dataset)

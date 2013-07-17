@@ -6,6 +6,8 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
+import collections
+
 import gdal
 import numpy as np
 
@@ -13,6 +15,15 @@ from gislib import projections
 from gislib import rasters
 from gislib.store import datasets
 from gislib.store import domains
+
+
+class Cache(collections.OrderedDict):
+    def __setitem__(self, *args, **kwargs):
+        if len(self) >= 10:
+            del self[(self.iterkeys().next())]
+        return super(Cache, self).__setitem__(*args, **kwargs)
+
+cache = Cache()
 
 
 class GDALAdapter(object):
@@ -60,12 +71,17 @@ class GDALAdapter(object):
         """
         Return dataset object.
         """
-        gdal_dataset = gdal.Open(sourcepath)
-        return datasets.Dataset(
-            config=self.get_config(gdal_dataset),
-            axes=self.get_axes(gdal_dataset),
-            data=self.get_data(gdal_dataset),
-        )
+        if sourcepath not in cache:
+            print('create')
+            gdal_dataset = gdal.Open(sourcepath)
+            cache[sourcepath] = datasets.Dataset(
+                config=self.get_config(gdal_dataset),
+                axes=self.get_axes(gdal_dataset),
+                data=self.get_data(gdal_dataset),
+            )
+        else:
+            print('return from cache')
+        return cache[sourcepath]
 
     def get_datasets(self):
         """

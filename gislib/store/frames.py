@@ -144,17 +144,44 @@ class Config(object):
         """ Return extent tuple. """
         return tuple(d.get_extent(s)
                      for s, d in zip(location.parts, self.domains))
-
-    def get_config(self, location):
+    
+    def get_dataset_config(self, size, extent):
         """ Return dataset config. """
-        extent = self.get_extent(location)
         domains = [datasets.Domain(domain=d.domain, extent=e, size=s)
-                   for d, s, e in zip(self.domains, self.size, extent)]
+                   for d, s, e in zip(self.domains, size, extent)]
         return datasets.Config(domains=domains)
+    
+    def get_dataset_config_for_location(self, location):
+        """ Return dataset config. """
+        size = self.size
+        extent = self.get_extent(location)
+        return self.get_dataset_config(size=size, extent=extent)
 
     # =========================================================================
     # Location navigation
     # -------------------------------------------------------------------------
+    def get_locations(self, config):
+        """
+        Return a generator of location tuples.
+        """
+        extent = config.extent
+        size = config.size
+        # Coerce resolutions to levels
+        level = tuple(d.get_level(e, s)
+                      for d, e, s in zip(self.domains, extent, size))
+
+        # Get the funcs that return the per-dimension sublocation generators
+        funcs = (s.get_sublocations(e, l)
+                 for s, e, l in zip(self.domains, extent, level))
+
+        # Nest via reduce function
+        def reducer(f1, f2):
+            return lambda: ((i,) + (j,)
+                            for j in f2() for i in f1())
+
+        return (Location(parts=parts)
+                for parts in reduce(reducer, funcs)())
+
     def get_parent(self, location, axis=0, levels=1):
         """
         Return a location.
@@ -234,36 +261,16 @@ class Frame(object):
         ned interval.
         """
         self.config = config
-        self.dtype = dtype  # Any pickleable numpy dtype object will do.
+        self.dtype = np.dtype(dtype)  # So that itemsize will work
         self.fill_value = fill_value  # Also used to identify NED removals.
 
-        # Slices to acces binary data
+        # Offsets and lengths for reading buffers from string
         axis = 8 * sum(1 + len(f.size) for f in self.config.domains)
         data = axis  # No (ned) axis currently.
-        self.location = slice(axis)
+
+        self.location = slice(0, axis)
         self.axes = slice(axis, data)
         self.data = slice(data, None)
-
-    @property
-    def size(self):
-        """ Return bytesize. """
-        return self.dtype.itemsize * np.prod(self.shape)
-
-    @property
-    def shape(self):
-        """ Return numpy shape. """
-        return self.config.shape
-
-    @property
-    def empty(self):
-        """ Return empty masked array. """
-        data = np.ma.masked_all(self.shape, self.dtype)
-        data.fill_value = self.fill_value
-        return data
-
-    def get_config(self, location):
-        """ Convenience method. """
-        return self.config.get_config(location)
 
     def get_location(self, string):
         """ Load location from string. """
@@ -280,13 +287,15 @@ class Frame(object):
 
     def get_data(self, string):
         """ Get the array in the data. """
-        result = np.ma.array(np.ma.masked_equal(
-            np.fromstring(string[self.data],
-                          dtype=self.dtype),
-            self.fill_value,
-            copy=False,
-        )).reshape(*self.shape)
-        result.fill_value = self.fill_value
+        data = np.frombuffer(string[self.data], dtype=self.dtype)
+        data.shape = self.config.shape
+        data.flags.writeable = True  # This may be a bug.
+        mask = np.equal(data, self.fill_value)
+        result = np.ma.array(
+            data,
+            mask=mask,
+            fill_value=self.fill_value,
+        )
         return result
 
     def get_saved_dataset(self, string):
@@ -296,40 +305,31 @@ class Frame(object):
         location = self.get_location(string)
         dataset_kwargs = dict(
             location=location,
-            config=self.get_config(location),
+            config=self.config.get_dataset_config_for_location(location),
             axes=self.get_axes(string),
             data=self.get_data(string),
         )
         return datasets.SerializableDataset(**dataset_kwargs)
 
-    def get_empty_dataset(self, location):
-        """ Return empty dataset for location. """
+    def get_empty_dataset_for_config(self, config, location=None):
+        """ Return empty dataset. """
         dataset_kwargs = dict(
-            location=location,
-            config=self.get_config(location),
+            config=config,
             axes=tuple(),
-            data=self.empty,
+            data=np.ones(config.shape, self.dtype) * self.fill_value,
         )
+        if location is None:
+            return datasets.Dataset(**dataset_kwargs)
+        dataset_kwargs.update(location=location)
         return datasets.SerializableDataset(**dataset_kwargs)
 
-    def get_locations(self, config):
-        """
-        Return a generator of location tuples.
-        """
-        extent = config.extent
-        size = config.size
-        # Coerce resolutions to levels
-        level = tuple(d.get_level(e, s)
-                      for d, e, s in zip(self.config.domains, extent, size))
-
-        # Get the funcs that return the per-dimension sublocation generators
-        funcs = (s.get_sublocations(e, l)
-                 for s, e, l in zip(self.config.domains, extent, level))
-
-        # Nest via reduce function
-        def reducer(f1, f2):
-            return lambda: ((i,) + (j,)
-                            for j in f2() for i in f1())
-
-        return (Location(parts=parts)
-                for parts in reduce(reducer, funcs)())
+    def get_empty_dataset(self, extent, size):
+        """ Return empty dataset. """
+        config = self.config.get_dataset_config(extent=extent, size=size)
+        return self.get_empty_dataset_for_config(config=config)
+    
+    def get_empty_dataset_for_location(self, location):
+        """ Return empty dataset. """
+        config=self.config.get_dataset_config_for_location(location)
+        return self.get_empty_dataset_for_config(config=config,
+                                                 location=location)

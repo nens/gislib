@@ -17,6 +17,7 @@ from gislib.store import frames
 from gislib.store import stores
 from gislib.store import adapters
 from gislib.store import storages
+from gislib.store import datasets
 
 description = """
 Commandline tool for working with nens/gislib stores.
@@ -38,7 +39,7 @@ def get_parser():
     return parser
 
 
-def command(targetpath, sourcepaths):
+def fill(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
     spatial_domain = domains.Space(projection=28992)
@@ -59,9 +60,34 @@ def command(targetpath, sourcepaths):
     store = stores.Store(storage=storage, frame=frame)
     adapter = adapters.GDALAdapter(sourcepaths=sourcepaths)
     store.add_from(adapter=adapter)
-        
+
+
+def load(targetpath, sourcepaths):
+    """ Do something spectacular. """
+    storage = storages.FileStorage(targetpath)
+    store = stores.Store(storage=storage)
+    extent = (
+        #((89000.0, 472500.0), (90000.0,473750.0)),
+        ((85000.0, 471250.0), (86000.0, 472500.0)),
+        ((0,), (1,)),
+    )
+    size = (
+        (2000, 2500),
+        (1,),
+    )
+    dataset = store.frame.get_empty_dataset(extent=extent, size=size)
+    from PIL import Image
+    from matplotlib import cm, colors
+    normalize = colors.Normalize()
+    from arjan.monitor import Monitor; mon = Monitor() 
+    store.fill_into(dataset)
+    import ipdb; ipdb.set_trace() 
+    Image.fromarray(cm.jet(normalize(dataset.data[:, :, 0]), bytes=True)).show()
+    mon.check('overall') 
 
 
 def main():
     """ Call command with args from parser. """
-    command(**vars(get_parser().parse_args()))
+    #fill(**vars(get_parser().parse_args()))
+    load(**vars(get_parser().parse_args()))
+

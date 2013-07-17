@@ -16,12 +16,10 @@ Domain = collections.namedtuple('Domain', ('domain', 'extent', 'size'))
 
 def reproject(source, target):
     """
-    It's more complex.
+    Use simple affine transform to place source data in target.
 
-    Determine the offset and diagonals from sizes.
-    Determine the overlapping extents
-    Calculate views for both of them
-    Do the trick.
+    It is still a bit slow. We could just copy in case the diagonal is
+    some ones. Also, we could a nearest neighbour project via slicing.
     """
     # Source, target and intersection bounds
     l1, u1 = np.array(source.config.span).transpose()
@@ -46,10 +44,12 @@ def reproject(source, target):
 
     # Determine transform
     diagonal = (u5 - l5) / (u4 - l4) / (s4 / s5)
-    ndimage.affine_transform(sourceview, diagonal, output=targetview)
-        
-    targetview.mask = np.ma.equal(targetview.data, targetview.fill_value)
-    print('reproject')
+    if np.equal(diagonal, 1).all():
+        targetview[:] = sourceview
+
+    else:
+        ndimage.affine_transform(sourceview, diagonal,
+                                 output=targetview, order=0)
 
 
 class Config(object):
@@ -97,7 +97,7 @@ class SerializableDataset(Dataset):
         return b''.join(([self.location.tostring()] +
                          [n.tostring()
                           for n in self.axes] +
-                         [self.data.filled().tostring()]))
+                         [self.data.tostring()]))
 
 
 class Converter(object):
