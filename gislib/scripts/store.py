@@ -66,37 +66,25 @@ def fill(targetpath, sourcepaths):
 
 def load(targetpath, sourcepaths):
     """ Do something spectacular. """
-    from gislib import rasters
-    gdal_dataset = gdal.Open(sourcepaths[0])
-    gdal_extent = rasters.DatasetGeometry.from_dataset(gdal_dataset).extent
-    store_extent = (gdal_extent[:2], gdal_extent[2:])
-    original = gdal_dataset.ReadAsArray()
-    
-
     storage = storages.FileStorage(targetpath)
     store = stores.Store(storage=storage)
-    extent = (
-        store_extent,
-        ((0,), (1,)),
-    )
-    size = (
-        (2000, 2500),
-        (1,),
-    )
-    dataset = store.frame.get_empty_dataset(extent=extent, size=size)
+
     from PIL import Image
     from matplotlib import cm, colors
-    normalize = colors.Normalize()
-    from arjan.monitor import Monitor; mon = Monitor() 
+    from gislib import rasters
+    widths = [1999, 2000]
+    extent = (((640250, 6804915), (461495,6806956)), ((0,), (1,)))
+    size = ((1900, 2400), (1,))
+    dataset = store.frame.get_empty_dataset(extent=extent, size=size)
+    import ipdb; ipdb.set_trace() 
     store.fill_into(dataset)
-    mon.check('overall')
     repro = dataset.data[:,:,0].transpose()
-    Image.fromarray(cm.jet(normalize(original[::4,::4]), bytes=True)).show()
-    Image.fromarray(cm.jet(normalize(repro[::4,::4]), bytes=True)).show()
+    normalize = colors.Normalize()
+    Image.fromarray(cm.gist_earth(normalize(repro[::4,::4]), bytes=True)).show()
 
 
 def main():
     """ Call command with args from parser. """
-    fill(**vars(get_parser().parse_args()))
+    #fill(**vars(get_parser().parse_args()))
     load(**vars(get_parser().parse_args()))
 

@@ -4,26 +4,18 @@ Datastore for gridded data
 Roadmap
 -------
 We have a lowlevel storage facility. It must have some config:
+    - Addition to other store: get_adapter() method for stores;
     - What domain (time, spatial, etc.)
     - What transformers?
     - What aggregators?
+    - Store configuration:
+            - Bases: Class, pickle or json?
+            - Or always instatiate using some class
+            - using classes or json templates or pickled frames
+            - Radar
+            - AHN2
 
-To do next:
-- Basic dataset transformer to be able to put and read any extent of same domain
 
-At that point we can do the pitch:
-- Data addition to baselevel at arbitrary extent
-- Data retrieval from baselevel at arbitrary extent
-- Addition to other store
-- Web interface for quick browsing the images.
-- Would be great to have backwards radar animation.
-
-And then continue with:
-- Multiprocessed addition of datasets
-- Configuring a store is tedious. Make json templates.
-    - Use class based configuration, so that inheritance can be used for configuration?
-    - AHN2
-    - Radar
 - Advanced dataset transformer to enable multiple calendars and projections
     - converters.Raster
     - converters.Time
@@ -39,15 +31,12 @@ Testing:
 - Lower level storage tests
 - Lower level tests for scales and metrics.
 
-
 Aggregators:
 - Take care of lining up the right datasets and using the right converters.
 
 Adapters:
 - Put various formats into our structure format (for example gdal)
 - Get various formats from our structure format
-
-
 
 - Do we need to always query for the top chunk? No!
     - Only when aggregating

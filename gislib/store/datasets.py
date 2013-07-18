@@ -18,6 +18,15 @@ def reproject(source, target):
     """
     Use simple affine transform to place source data in target.
 
+    However, if domains in source differ from those in target, additional measures must be taken.
+    - projection: Use gdal to warp the spacedomain - do not affine that one.
+    - calendar: Use nedcdf or some coards library to convert extents
+    - non-equidistant time:
+        - Determine target extent in source calendar
+        - Convert only relevant values to target
+        - Determine overflow in target - what to do with it? Discard, too.
+    - The add_from is responsible for picking the correct datasets for writing the data to. It should automatically return datasets for which the data fits
+
     It is still a bit slow. We could just copy in case the diagonal is
     some ones. Also, we could a nearest neighbour project via slicing.
     """
@@ -43,11 +52,12 @@ def reproject(source, target):
     s4, s5 = np.array(sourceview.shape), np.array(targetview.shape)
 
     # Determine transform
-    diagonal = (u5 - l5) / (u4 - l4) / (s4 / s5)
+    diagonal = (u5 - l5) / (u4 - l4) / (s5 / s4)
     if np.equal(diagonal, 1).all():
         targetview[:] = sourceview
     else:
-        ndimage.affine_transform(sourceview, diagonal,
+        ndimage.affine_transform(sourceview, diagonal, mode='nearest',
+                                 output_shape=targetview.shape,
                                  output=targetview, order=0)
 
 

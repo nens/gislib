@@ -99,6 +99,7 @@ class Domain(object):
         If resolution does not exactly match, locations for the next
         matching higher resolutions are returned.
         """
+        print(level)
         # Determine the block span at requested level
         span = tuple(self.base ** level * s * f
                      for s, f in zip(self.size, self.factor))
