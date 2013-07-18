@@ -11,6 +11,7 @@ import logging
 import shutil
 
 import numpy as np
+from osgeo import gdal
 
 from gislib.store import domains
 from gislib.store import frames
@@ -44,13 +45,14 @@ def fill(targetpath, sourcepaths):
     storage = storages.FileStorage(targetpath)
     spatial_domain = domains.Space(projection=28992)
     time_domain = domains.Time(calendar='minutes since 20130401')
-    config = frames.Config(domains=[
-        frames.Domain(domain=spatial_domain, size=(256, 256)),
-        frames.Domain(domain=time_domain, size=(1,))],
+    config = frames.Config(
+        domains=[
+            frames.Domain(domain=spatial_domain, size=(256, 256)),
+            frames.Domain(domain=time_domain, size=(1,))
+        ],
+        fill=np.finfo('f4').min,
     )
-    frame = frames.Frame(config=config,
-                         dtype='f4',
-                         fill_value=np.finfo('f4').min)
+    frame = frames.Frame(config=config, dtype='f4')
 
     try:
         shutil.rmtree(targetpath)
@@ -64,11 +66,17 @@ def fill(targetpath, sourcepaths):
 
 def load(targetpath, sourcepaths):
     """ Do something spectacular. """
+    from gislib import rasters
+    gdal_dataset = gdal.Open(sourcepaths[0])
+    gdal_extent = rasters.DatasetGeometry.from_dataset(gdal_dataset).extent
+    store_extent = (gdal_extent[:2], gdal_extent[2:])
+    original = gdal_dataset.ReadAsArray()
+    
+
     storage = storages.FileStorage(targetpath)
     store = stores.Store(storage=storage)
     extent = (
-        #((89000.0, 472500.0), (90000.0,473750.0)),
-        ((85000.0, 471250.0), (86000.0, 472500.0)),
+        store_extent,
         ((0,), (1,)),
     )
     size = (
@@ -81,13 +89,14 @@ def load(targetpath, sourcepaths):
     normalize = colors.Normalize()
     from arjan.monitor import Monitor; mon = Monitor() 
     store.fill_into(dataset)
-    import ipdb; ipdb.set_trace() 
-    Image.fromarray(cm.jet(normalize(dataset.data[:, :, 0]), bytes=True)).show()
-    mon.check('overall') 
+    mon.check('overall')
+    repro = dataset.data[:,:,0].transpose()
+    Image.fromarray(cm.jet(normalize(original[::4,::4]), bytes=True)).show()
+    Image.fromarray(cm.jet(normalize(repro[::4,::4]), bytes=True)).show()
 
 
 def main():
     """ Call command with args from parser. """
-    #fill(**vars(get_parser().parse_args()))
+    fill(**vars(get_parser().parse_args()))
     load(**vars(get_parser().parse_args()))
 

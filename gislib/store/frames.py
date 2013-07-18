@@ -129,8 +129,9 @@ class Domain(object):
 class Config(object):
     """ Collection of frame domains. """
 
-    def __init__(self, domains):
+    def __init__(self, domains, fill):
         self.domains = domains
+        self.fill = fill
 
     @property
     def size(self):
@@ -147,9 +148,10 @@ class Config(object):
     
     def get_dataset_config(self, size, extent):
         """ Return dataset config. """
+        fill = self.fill
         domains = [datasets.Domain(domain=d.domain, extent=e, size=s)
                    for d, s, e in zip(self.domains, size, extent)]
-        return datasets.Config(domains=domains)
+        return datasets.Config(domains=domains, fill=fill)
     
     def get_dataset_config_for_location(self, location):
         """ Return dataset config. """
@@ -253,7 +255,7 @@ class Config(object):
 # Frames
 # -----------------------------------------------------------------------------
 class Frame(object):
-    def __init__(self, config, dtype, fill_value):
+    def __init__(self, config, dtype):
         """
         For ned dimensions, need to add a dtype per ned dimension (or
         even multiple, consider the case of ned 3d space). Then the
@@ -262,7 +264,6 @@ class Frame(object):
         """
         self.config = config
         self.dtype = np.dtype(dtype)  # So that itemsize will work
-        self.fill_value = fill_value  # Also used to identify NED removals.
 
         # Offsets and lengths for reading buffers from string
         axis = 8 * sum(1 + len(f.size) for f in self.config.domains)
@@ -290,13 +291,7 @@ class Frame(object):
         data = np.frombuffer(string[self.data], dtype=self.dtype)
         data.shape = self.config.shape
         data.flags.writeable = True  # This may be a bug.
-        mask = np.equal(data, self.fill_value)
-        result = np.ma.array(
-            data,
-            mask=mask,
-            fill_value=self.fill_value,
-        )
-        return result
+        return data
 
     def get_saved_dataset(self, string):
         """ Create a dataset from a string. """
@@ -316,7 +311,7 @@ class Frame(object):
         dataset_kwargs = dict(
             config=config,
             axes=tuple(),
-            data=np.ones(config.shape, self.dtype) * self.fill_value,
+            data=np.ones(config.shape, self.dtype) * self.config.fill,
         )
         if location is None:
             return datasets.Dataset(**dataset_kwargs)

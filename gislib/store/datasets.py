@@ -46,7 +46,6 @@ def reproject(source, target):
     diagonal = (u5 - l5) / (u4 - l4) / (s4 / s5)
     if np.equal(diagonal, 1).all():
         targetview[:] = sourceview
-
     else:
         ndimage.affine_transform(sourceview, diagonal,
                                  output=targetview, order=0)
@@ -54,8 +53,9 @@ def reproject(source, target):
 
 class Config(object):
     """ Collection of dataset scales. """
-    def __init__(self, domains):
+    def __init__(self, domains, fill):
         self.domains = domains
+        self.fill = fill
 
     @property
     def extent(self):

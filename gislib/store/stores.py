@@ -98,11 +98,11 @@ class Store(object):
                      location=location,
                      adapter=Adapter(sourcepaths=sourcepaths[location]))
                 for location in sourcepaths)
-        pool = multiprocessing.Pool()
-        pool.map(process, jobs)
-        pool.close()
-        #for job in jobs:
-            #process(job)
+        #pool = multiprocessing.Pool()
+        #pool.map(process, jobs)
+        #pool.close()
+        for job in jobs:
+            process(job)
             
 
     def fill_into(self, dataset):
@@ -110,7 +110,7 @@ class Store(object):
         Fill dataset with data from the store.
         """
         for location in self.frame.config.get_locations(dataset.config):
-            string = self.databox[location.key]
-            t = self.get_dataset(location)
-            datasets.reproject(t, dataset)
-            #datasets.reproject(self.get_dataset(location), dataset)
+            #string = self.databox[location.key]
+            #t = self.get_dataset(location)
+            #datasets.reproject(t, dataset)
+            datasets.reproject(self.get_dataset(location), dataset)
