@@ -10,15 +10,13 @@ import argparse
 import logging
 import shutil
 
-import numpy as np
 from osgeo import gdal
 
-from gislib.store import domains
-from gislib.store import frames
 from gislib.store import stores
 from gislib.store import adapters
 from gislib.store import storages
 from gislib.store import datasets
+from gislib.store import grids
 
 description = """
 Commandline tool for working with nens/gislib stores.
@@ -43,23 +41,16 @@ def get_parser():
 def fill(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
-    spatial_domain = domains.Space(projection=28992)
-    time_domain = domains.Time(calendar='minutes since 20130401')
-    config = frames.Config(
-        domains=[
-            frames.Domain(domain=spatial_domain, size=(256, 256)),
-            frames.Domain(domain=time_domain, size=(1,))
-        ],
-        fill=np.finfo('f4').min,
-    )
-    frame = frames.Frame(config=config, dtype='f4')
-
+    grid = grids.HybridRadar2013()
+    print(grid.guides)
+    exit()
+    
     try:
         shutil.rmtree(targetpath)
     except OSError:
         pass
 
-    store = stores.Store(storage=storage, frame=frame)
+    store = stores.Store(storage=storage, grid=grid)
     adapter = adapters.GDALAdapter(sourcepaths=sourcepaths)
     store.add_from(adapter=adapter)
 
@@ -85,6 +76,6 @@ def load(targetpath, sourcepaths):
 
 def main():
     """ Call command with args from parser. """
-    #fill(**vars(get_parser().parse_args()))
-    load(**vars(get_parser().parse_args()))
+    fill(**vars(get_parser().parse_args()))
+    #load(**vars(get_parser().parse_args()))
 

@@ -13,6 +13,13 @@ import numpy as np
 
 Domain = collections.namedtuple('Domain', ('domain', 'extent', 'size'))
 
+class DoesNotFitError(Exception):
+    """
+    Raised by reproject functions if non-equidistant time domains do
+    not fit in the extents of the dataset.
+    """
+    pass
+
 
 def reproject(source, target):
     """
@@ -29,6 +36,8 @@ def reproject(source, target):
 
     It is still a bit slow. We could just copy in case the diagonal is
     some ones. Also, we could a nearest neighbour project via slicing.
+
+    Raises DoesNotFitError if the source does not fit in the target.
     """
     # Source, target and intersection bounds
     l1, u1 = np.array(source.config.span).transpose()
@@ -60,12 +69,34 @@ def reproject(source, target):
                                  output_shape=targetview.shape,
                                  output=targetview, order=0)
 
+class BaseDomain(object):
+    """ Base class for dataset domains. """
+    def __init__(self, size, extent):
+        self.size = size
+        self.extent = extent
+
+
+class SpaceDomain(BaseDomain):
+    """ A domain containing gdal datasets. """
+    def __init__(self, projection, *args, **kwargs):
+        self.projection = projection
+        super(self, SpaceDomain).__init__(*args, **kwargs)
+        
+
+class TimeDomain(BaseDomain):
+    """ A domain containing gdal datasets. """
+    def __init__(self, calendar, equidistant=True, *args, **kwargs):
+        self.projection = projection
+        self.equidistant = equidistant
+        super(self, TimeDomain).__init__(*args, **kwargs)
+
 
 class Config(object):
     """ Collection of dataset scales. """
     def __init__(self, domains, fill):
         self.domains = domains
         self.fill = fill
+        # dtype? Or not?
 
     @property
     def extent(self):
@@ -83,28 +114,25 @@ class Config(object):
     def shape(self):
         return tuple(j for i in self.size for j in i)
 
-        
-
 
 class Dataset(object):
-    def __init__(self, config, axes, data):
-        """
-        """
-        self.config = config
-        self.axes = axes
-        self.data = data
+    def __init__(self, conf, axes, data):
+        """ Dataset. """
+        self.conf = conf
+        self.axes = axes  # A tuple of numpy arrays corresponding to the ned domains
+        self.data = data  # The numpy array 
 
 
 class SerializableDataset(Dataset):
     """ Dataset with a location attribute and a tostring() method. """
 
-    def __init__(self, location, *args, **kwargs):
-        self.location = location
+    def __init__(self, locus, *args, **kwargs):
+        self.locus = locus
         super(SerializableDataset, self).__init__(*args, **kwargs)
 
     def tostring(self):
         """ Return serialized dataset string. """
-        return b''.join(([self.location.tostring()] +
+        return b''.join(([self.locus.tostring()] +
                          [n.tostring()
                           for n in self.axes] +
                          [self.data.tostring()]))
