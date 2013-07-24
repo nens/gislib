@@ -36,9 +36,14 @@ class GridLocus(object):
         return self.tostring() == locus.tostring()
 
 
-class BaseGuide(object):
+Space = collections.namedtuple('Space', ('proj',))
+Time = collections.namedtuple('Time', ('unit',))
+
+
+class Guide(object):
     """ Base class for guides. """
-    def __init__(self, size, offset=None, factor=None, base=2):
+    def __init__(self, kind, size, offset=None, factor=None, base=2):
+        self.kind = kind
         self.size = size  # Size of chunk for this domain
         self.base = base  # resolution ratio between levels
         multiplicity = len(size)
@@ -54,10 +59,15 @@ class BaseGuide(object):
             self.offset = (0,) * multiplicity
         else:
             self.offset = offset
+
     
     def __iter__(self):
         """ Convenience for the deserialization of locations. """
         return (None for s in self.size)
+
+    def get_domain(self, extent, size):
+        """ Return domain for use in dataset config. """
+        return datasets.Domain(kind=self.kind, extent=extent, size=size)
 
     def get_level(self, extent, size):
         """
@@ -122,23 +132,14 @@ class BaseGuide(object):
                         for indices in reduce(reducer, funcs)())
 
 
-class SpaceGuide(BaseGuide):
-    """ Space domain adds a projection. """
-    def __init__(self, projection, *args, **kwargs):
-        self.projection = projection
-        super(SpaceGuide, self).__init__(*args, **kwargs)
-
-
-class TimeGuide(BaseGuide):
-    """ A domain containing gdal datasets. """
-    def __init__(self, calendar, equidistant=True, *args, **kwargs):
-        self.calendar = calendar
-        self.equidistant = equidistant
-        super(TimeGuide, self).__init__(*args, **kwargs)
-    
 
 class Grid(object):
-    """ Collection of guides. """
+    """ Defines a store. """
+    def __init__(self):
+        """ Define indexes into data based. """
+        self.locus_size = 8 * sum([1 + len(g.size) for g in self.guides])
+        self.axes_size = 0
+        
         
     @property
     def size(self):
@@ -153,18 +154,27 @@ class Grid(object):
         return tuple(d.get_extent(s)
                      for s, d in zip(locus.loci, self.guides))
     
-    def get_dataset_config(self, size, extent):
-        """ Return dataset config. """
+    def get_config(self, size, extent):
+        """ 
+        Return dataset config.
+        
+        Convenient if a dataset must be created that matches this grid.
+        """
+        domains = [g.get_domain(size=s, extent=e)
+                   for g, s, e in zip(self.guides, size, extent)]
+        dtype = self.dtype
         fill = self.fill
-        domains = [datasets.Domain(domain=d.guide, extent=e, size=s)
-                   for d, s, e in zip(self.domains, size, extent)]
-        return datasets.Config(domains=domains, fill=fill)
+        return datasets.Config(domains=domains, dtype=dtype, fill=fill)
     
-    def get_dataset_config_for_location(self, location):
-        """ Return dataset config. """
+    def get_config_for_location(self, location):
+        """ 
+        Return dataset config.
+
+        Used by store to create a dataset for the data at some location
+        """
         size = self.size
         extent = self.get_extent(location)
-        return self.get_dataset_config(size=size, extent=extent)
+        return self.get_config(size=size, extent=extent)
 
     # =========================================================================
     # Location navigation
@@ -257,34 +267,16 @@ class Grid(object):
                 root = root.get_parent(dimension=i, levels=begin)
         return root
 
+    # =========================================================================
+    #  Methods that convert stored data to objects
+    # -------------------------------------------------------------------------
 
-# =============================================================================
-# Frames
-# -----------------------------------------------------------------------------
-    #def __init__(self, config, dtype):
-        #"""
-        #For ned dimensions, need to add a dtype per ned dimension (or
-        #even multiple, consider the case of ned 3d space). Then the
-        #specified datatype must be prepended by the parameters into the
-        #ned interval.
-        #"""
-        #self.config = config
-        #self.dtype = np.dtype(dtype)  # So that itemsize will work
-
-        ## Offsets and lengths for reading buffers from string
-        #axis = 8 * sum(1 + len(f.size) for f in self.config.domains)
-        #data = axis  # No (ned) axis currently.
-
-        #self.location = slice(0, axis)
-        #self.axes = slice(axis, data)
-        #self.data = slice(data, None)
-
-    def get_location(self, string):
+    def get_locus(self, string):
         """ Load location from string. """
         v = iter(np.fromstring(string[self.location], dtype=np.int64))
         return Location(
-            parts=tuple(Sublocation(level=v.next(),
-                                    indices=tuple(v.next() for size in domain))
+            parts=tuple(GuideLocus(level=v.next(),
+                                   indices=tuple(v.next() for size in domain))
                         for domain in self.config.domains),
         )
 
@@ -338,7 +330,7 @@ class Grid(object):
     def get_locations(self, dataset, update=True):
         """ 
         This is the highest level location finder.
-        - Reproject calendars and projections
+        - Reproject units and projections
         - 
 
 

@@ -11,8 +11,6 @@ import collections
 from scipy import ndimage
 import numpy as np
 
-Domain = collections.namedtuple('Domain', ('domain', 'extent', 'size'))
-
 class DoesNotFitError(Exception):
     """
     Raised by reproject functions if non-equidistant time domains do
@@ -69,34 +67,17 @@ def reproject(source, target):
                                  output_shape=targetview.shape,
                                  output=targetview, order=0)
 
-class BaseDomain(object):
-    """ Base class for dataset domains. """
-    def __init__(self, size, extent):
-        self.size = size
-        self.extent = extent
 
 
-class SpaceDomain(BaseDomain):
-    """ A domain containing gdal datasets. """
-    def __init__(self, projection, *args, **kwargs):
-        self.projection = projection
-        super(self, SpaceDomain).__init__(*args, **kwargs)
-        
-
-class TimeDomain(BaseDomain):
-    """ A domain containing gdal datasets. """
-    def __init__(self, calendar, equidistant=True, *args, **kwargs):
-        self.projection = projection
-        self.equidistant = equidistant
-        super(self, TimeDomain).__init__(*args, **kwargs)
+Domain = collections.namedtuple('Domain', ('kind', 'size', 'extent'))
 
 
 class Config(object):
     """ Collection of dataset scales. """
-    def __init__(self, domains, fill):
+    def __init__(self, domains, dtype, fill):
         self.domains = domains
         self.fill = fill
-        # dtype? Or not?
+        dtype = dtype
 
     @property
     def extent(self):

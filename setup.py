@@ -14,6 +14,8 @@ install_requires = [
     'Pillow',
     'scipy',
     'setuptools',
+    'h5py',
+    'netCDF4',
     ],
 
 tests_require = [

@@ -1,6 +1,37 @@
 Datastore for gridded data
 ==========================
 
+Terminology
+-----------
+store
+    grid
+        dtype
+        fill
+        guide
+            calendar
+            size
+            base
+            offset
+            factor
+        guide
+
+dataset
+    config
+        dtype
+        fill
+        domain
+            calendar
+            size
+            extent
+        domain
+
+store consists of a grid and a storage
+    grid contains of a number of guides
+
+dataset consists of config, axes and data
+    config contains of a number of domains
+
+
 Roadmap
 -------
 Update workflow::

@@ -42,8 +42,6 @@ def fill(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
     grid = grids.HybridRadar2013()
-    print(grid.guides)
-    exit()
     
     try:
         shutil.rmtree(targetpath)
@@ -51,8 +49,11 @@ def fill(targetpath, sourcepaths):
         pass
 
     store = stores.Store(storage=storage, grid=grid)
-    adapter = adapters.GDALAdapter(sourcepaths=sourcepaths)
-    store.add_from(adapter=adapter)
+    adapter = adapters.RadarAdapter(sourcepaths=sourcepaths, grid=grid)
+
+    locations = store.add_from(adapter=adapter)
+    for l in locations:
+        pass
 
 
 def load(targetpath, sourcepaths):
