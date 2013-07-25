@@ -10,12 +10,9 @@ import argparse
 import logging
 import shutil
 
-from osgeo import gdal
-
 from gislib.store import stores
 from gislib.store import adapters
 from gislib.store import storages
-from gislib.store import datasets
 from gislib.store import grids
 
 description = """
@@ -41,15 +38,14 @@ def get_parser():
 def fill(targetpath, sourcepaths):
     """ Do something spectacular. """
     storage = storages.FileStorage(targetpath)
-    grid = grids.HybridRadar2013()
-    
+
     try:
         shutil.rmtree(targetpath)
     except OSError:
         pass
 
-    store = stores.Store(storage=storage, grid=grid)
-    adapter = adapters.RadarAdapter(sourcepaths=sourcepaths, grid=grid)
+    store = stores.Store(storage=storage, **grids.hybrid_radar)
+    adapter = adapters.RadarAdapter(sourcepaths=sourcepaths)
 
     locations = store.add_from(adapter=adapter)
     for l in locations:
@@ -63,20 +59,19 @@ def load(targetpath, sourcepaths):
 
     from PIL import Image
     from matplotlib import cm, colors
-    from gislib import rasters
-    widths = [1999, 2000]
-    extent = (((640250, 6804915), (461495,6806956)), ((0,), (1,)))
+    extent = (((640250, 6804915), (461495, 6806956)), ((0,), (1,)))
     size = ((1900, 2400), (1,))
     dataset = store.frame.get_empty_dataset(extent=extent, size=size)
-    import ipdb; ipdb.set_trace() 
     store.fill_into(dataset)
-    repro = dataset.data[:,:,0].transpose()
+    repro = dataset.data[:, :, 0].transpose()
     normalize = colors.Normalize()
-    Image.fromarray(cm.gist_earth(normalize(repro[::4,::4]), bytes=True)).show()
+    Image.fromarray(cm.gist_earth(
+        normalize(repro[::4, ::4]),
+        bytes=True,
+    )).show()
 
 
 def main():
     """ Call command with args from parser. """
     fill(**vars(get_parser().parse_args()))
     #load(**vars(get_parser().parse_args()))
-

@@ -7,49 +7,51 @@ from __future__ import absolute_import
 from __future__ import division
 
 from gislib.store import stores
+from gislib.store import kinds
 
 import numpy as np
 
-class BaseRadar2013(stores.Grid):
-    """ Template for radar 2013 data. """
-    def __init__(self):
-        self.dtype = 'f4'
-        self.fill = np.finfo(self.dtype).min
-        self.guides = [
+
+def union(*dicts):
+    """ Return union of dictionaries. """
+    return reduce(
+        lambda x, y: dict(x.items() + y.items()),
+        dicts,
+    )
+
+
+def get_radar_guides(layout):
+    """ Return guides tuple. """
+    return dict(
+        guides=(
             stores.Guide(
-                kind=stores.Space(proj=28992),
-                size=self.SIZE['space'],
+                kind=kinds.Space(proj=3857),
+                size={'time': (1, 1),
+                      'hybrid': (16, 16),
+                      'space': (256, 256)}[layout]
             ),
             stores.Guide(
-                kind=stores.Time(unit='minutes since 20130101'),
+                kind=kinds.Time(unit='minutes since 2013-01-01'),
                 base=4,
-                size=self.SIZE['time'],             
+                size={'space': (1,),
+                      'time': (65536,),
+                      'hybrid': (256,)}[layout]
             ),
-        ]
-        super(BaseRadar2013, self).__init__()
+        ),
+    )
 
+base_radar = dict(dtype='f4', fill=np.finfo('f4').min)
+time_radar = union(base_radar, get_radar_guides(layout='time'))
+space_radar = union(base_radar, get_radar_guides(layout='space'))
+hybrid_radar = union(base_radar, get_radar_guides(layout='hybrid'))
 
-class HybridRadar2013(BaseRadar2013):
-    SIZE = dict(time=(256,),
-                space=(16, 16))
-
-
-class TimeRadar2013(BaseRadar2013):
-    SIZE = dict(time=(65536,),
-                space=(1, 1))
-
-
-class SpaceRadar2013(BaseRadar2013):
-    SIZE = dict(time=(1,),
-                space=(256, 256))
-
-
-class Ahn2(stores.Grid):
-    """ Template for AHN2 data """
-    def __init__(self):
-        self.dtype = 'f4'
-        self.fill = np.finfo(self.dtype).min
-        self.space = stores.SpaceDomain(
-            size=(256, 256),
-            proj=28992,
-        )
+# Obsolete, use kwargs.
+#class Ahn2(stores.Grid):
+    #""" Template for AHN2 data """
+    #def __init__(self):
+        #self.dtype = 'f4'
+        #self.fill = np.finfo(self.dtype).min
+        #self.space = stores.SpaceDomain(
+            #size=(256, 256),
+            #proj=28992,
+        #)

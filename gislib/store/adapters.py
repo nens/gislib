@@ -9,14 +9,12 @@ from __future__ import division
 import collections
 
 import gdal
-import netCDF4
 import h5py
-import numpy as np
 
 from gislib import projections
 from gislib import rasters
 from gislib.store import datasets
-from gislib.store import stores
+from gislib.store import kinds
 
 
 class Cache(collections.OrderedDict):
@@ -29,11 +27,11 @@ cache = Cache()
 
 
 class GDALAdapter(object):
-    """ 
+    """
     """
     def __init__(self, sourcepaths):
         self.sourcepaths = sourcepaths
-        
+
     def get_data(self, gdal_dataset, config):
         """ Return a masked array from dataset. """
         data = gdal_dataset.ReadAsArray()
@@ -99,23 +97,19 @@ class GDALAdapter(object):
 
 
 class RadarAdapter(object):
-    def __init__(self, grid, sourcepaths):
+    def __init__(self, sourcepaths):
         self.sourcepaths = sourcepaths
-        self.grid = grid
 
-    def get_extent(self, h5):
-        # Space
+    def _get_space_extent(self, h5):
         east = h5['east'][:]
         east_step = east[1] - east[0]
         north = h5['north'][:]
         north_step = north[0] - north[1]
         lower = east[0] - east_step / 2, north[-1] - north_step / 2
         upper = east[-1] + east_step / 2, north[0] + north_step / 2
-        # Time
-        time = h5['time'][:]
-        return (lower, upper), tuple(time[[0, -1]])
+        return lower, upper
 
-    def get_times(self, h5):
+    def _get_times(self, h5):
         chunks = h5['precipitation'].chunks
         size = h5['time'].size
         for i in range(0, size, chunks[2]):
@@ -125,28 +119,28 @@ class RadarAdapter(object):
         with h5py.File(self.sourcepaths[0]) as h5:
             time = h5['time']
             precipitation = h5['precipitation']
-            space_extent = self.get_extent(h5)
-            space_size = precipitation.shape[::2]
+            space_extent = self._get_space_extent(h5)
+            space_size = precipitation.shape[:2]
             unit = time.attrs['units']
             proj = 28992
             fill = -9999
-            dtype = precipitation.dtype
-            space_kind = stores.Space(proj=proj)
-            time_kind = stores.Time(unit=unit)
+            #dtype = precipitation.dtype
+            space_kind = kinds.Space(proj=proj)
+            time_kind = kinds.Time(unit=unit)
             space_domain = datasets.Domain(kind=space_kind,
                                            size=space_size,
                                            extent=space_extent)
-            for i1, i2 in self.get_times(h5):
-                extent = tuple(time[[i1, i2 - 1]])
+            for i1, i2 in self._get_times(h5):
+                time_extent = tuple(map(lambda x: (x,),time[[i1, i2 - 1]]))
+                time_lower = time_extent[0][0]
+                time_span = time_extent[1][0] - time_lower
                 time_domain = datasets.Domain(kind=time_kind,
                                               size=(i2 - i1,),
-                                              extent=extent)
-                domains = [space_domain, time_domain]
-                conf = datasets.Config(domains=domains,
-                                       dtype=dtype, fill=fill)
-                axes = (time[i1:i2])
-                data = precipitation[:, :, i1:i2]
-                dataset = datasets.Dataset(conf=conf, axes=axes, data=data)
-                print(dataset)
-                import ipdb; ipdb.set_trace() 
-                exit()
+                                              extent=time_extent)
+                dataset_kwargs = dict(
+                    domains=(space_domain, time_domain),
+                    axes=((time[i1:i2] - time_lower) / time_span,),
+                    data=precipitation[:, :, i1:i2],
+                    fill=fill,
+                )
+                yield datasets.Dataset(**dataset_kwargs)
