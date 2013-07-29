@@ -10,11 +10,12 @@ import netCDF4
 
 from gislib import rasters
 
+class NonEquidistantKind(object):
+    pass
+
 
 class Space(object):
     """ Gdal kind. """
-    EQUI = True
-
     def __init__(self, proj):
         self.proj = proj
 
@@ -46,10 +47,8 @@ class Space(object):
         return dict(size='todo', extent='todo', data='todo', axes='todo')
 
 
-class Time(object):
+class Time(NonEquidistantKind):
     """ Timeseries kind. """
-    EQUI = False
-
     def __init__(self, unit):
         self.unit = unit
 

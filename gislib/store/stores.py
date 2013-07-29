@@ -14,6 +14,7 @@ import pickle
 import numpy as np
 
 from gislib.store import datasets
+from gislib.store import kinds
 
 GuideLocus = collections.namedtuple('Locus', ('level', 'indices'))
 
@@ -329,6 +330,17 @@ class Store(object):
         )
         return datasets.SerializableDataset(**dataset_kwargs)
 
+    def _create_axes(self):
+        """
+        Return empty axes for self.
+        """
+        guides = tuple(g for g in self.guides
+                       if isinstance(g.kind, kinds.NonEquidistantKind))
+        return tuple(np.ones(n) * -1
+                       for s, g in zip(self.size, self.guides)
+                       for n in s if isinstance(g.kind,
+                                                kinds.NonEquidistantKind))
+
     def _create_dataset(self, locus):
         """ 
         Return empty dataset for location.
@@ -338,10 +350,7 @@ class Store(object):
             domains=[g.get_domain(size=s, extent=e)
                      for g, s, e in zip(self.guides, self.size, extent)],
             fill=self.fill,
-            axes=tuple(np.ones(n) * -1
-                       for s, g in zip(self.size,
-                                       self.guides)
-                       for n in s if not g.kind.EQUI),
+            axes=self._create_axes(),
             data = np.ones(self.shape, self.dtype) * self.fill
         )
         return datasets.SerializableDataset(locus, **kwargs)

@@ -7,7 +7,13 @@ from __future__ import absolute_import
 from __future__ import division
 
 from scipy import ndimage
+from osgeo import gdal
+
 import numpy as np
+
+from gislib import rasters
+from gislib import projections
+from gislib.store import kinds
 
 
 class DoesNotFitError(Exception):
@@ -15,32 +21,81 @@ class DoesNotFitError(Exception):
     Raised by reproject functions if non-equidistant time domains do
     not fit in the extents of the dataset.
     """
-    pass  # But probably some init will be here to transport some data.
+    def __init__(self, dimension):
+        self.dimension = dimension
+
+
+def _to_gdal(dataset, i):
+    """ Return in-memory gdal dataset. """
+    domain = dataset.domains[i]
+    size = domain.size
+
+    # Create dataset
+    a1 = tuple(j for d in dataset.domains[:i] for j in d.size)
+    a2 = tuple(j for d in dataset.domains[i + 1:] for j in d.size)
+
+    s1 = reduce(lambda x, y: x * y, a1, 1)
+    s2 = reduce(lambda x, y: x * y, a2, 1)
+    ysize, xsize = size
+    bands = s1 * s2
+
+    l1, l2 = len(a1), len(a2)
+    gdal_dataset = gmdrv.Create(
+        '',
+        xsize,
+        ysize,
+        bands,
+        gtype[dataset.data.dtype],
+    )
+
+    # Transpose args
+    p1, p2, p3 = np.cumsum([l1, 2, l2])
+    transpose = range(p1) + range(p2, p3) + range(p1, p2)
+
+    # Inverse transpose and reshape args
+    p1, p2, p3 = np.cumsum([l1, l2, 2])
+    itranspose = range(p1) + range(p2, p3) + range(p1, p2)
+    ireshape = a1 + a2 + size
+
+    # Projection, geotransform, fill and data
+    extent = tuple(e for t in domain.extent for e in t)
+    geometry = rasters.Geometry(extent=extent, size=size)
+    gdal_dataset.SetProjection(str(domain.kind.proj))
+    gdal_dataset.SetGeoTransform(geometry.geotransform())
+    shape = (-1,) + size
+    data = dataset.data.transpose(*transpose).reshape(shape)
+    #gdal_dataset.WriteRaster(0,0,xsize, ysize, data.tostring())
+    for j in range(gdal_dataset.RasterCount):
+        band = gdal_dataset.GetRasterBand(j + 1)
+        band.SetNoDataValue(float(dataset.fill))
+        band.WriteArray(data[j])
+
+    return dict(data=gdal_dataset, transpose=itranspose, shape=ireshape)
+   
+
+def _transform_space(source, target, i):
+    exit()
+    
+    
+    
+def _transform_time(source, target, i):
+    pass
 
 
 def reproject(source, target):
-    """
-    Use simple affine transform to place source data in target.
+    """ Put relevant data from source into target. """
+    # Create a view that selects relevant indices from time (and other ned)
+    # Create a subview according to spatial domain
+    # Raise if necessary
+    # Create datasets from them and reproject.
 
-    However, if domains in source differ from those in target, additional
-    measures must be taken.  - space: Use gdal to warp the spacedomain -
-    do not affine that one. Make a big spatial dataset from
 
-    - calendar: Use nedcdf or some coards library to convert extents
-    - time:
-        - Determine target extent in source calendar
-        - Convert only relevant values to target
-        - Determine overflow in target - what to do with it? Discard, too.
-    - The add_from is responsible for picking the correct datasets for
-    writing the data to. It should automatically return datasets for
-    which the data fits
 
-    It is still a bit slow. We could just copy in case the diagonal is
-    some ones. Also, we could a nearest neighbour project via slicing.
 
-    Raises DoesNotFitError if the source does not fit in the target.
-    """
-    import ipdb; ipdb.set_trace()
+        
+
+def _transform_generic(source, target):
+    """ Just affine transformation of equidistant grids. """
     # Source, target and intersection bounds
     l1, u1 = np.array(source.config.span).transpose()
     l2, u2 = np.array(target.config.span).transpose()
@@ -140,3 +195,8 @@ class SerializableDataset(Dataset):
                          [n.tostring()
                           for n in self.axes] +
                          [self.data.tostring()]))
+
+
+gdal.UseExceptions()
+gmdrv = gdal.GetDriverByName(b'mem')
+gtype = {np.dtype('f4'): gdal.GDT_Float32}

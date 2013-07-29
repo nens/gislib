@@ -1,29 +1,58 @@
 Datastore for gridded data
 ==========================
+The databox has 
+    complete data - the original datasets
+    location only data 
+        - to indicate the extent of the dataset.
+        - synced on every update
+        - used by update process to find data that is to be combined with new data.
+    Updating ned data:
+        - discern cases:
+            - empty store and single point: put it at level 0
+            - if new data arives:
+                determine old root
+                determine new root
+                if new root: update locations
+                determine existing data
+                determine new data
+                combine, reproject, if does-not-fit:
+                    put in children.
+                
+                determine new location
+
+
+                determine old data to incorporate
+                determine new data
+                determine new extent
+            - empty strings (files) in aggregators are links to one-level-up. So from second guide aggregator to first guide aggregator, and from first guide aggregator to databox.
+
+                    
+
+
 
 Terminology
 -----------
 store
-    grid
-        dtype
-        fill
-        guide
-            calendar
-            size
-            base
-            offset
-            factor
-        guide
+    dtype
+    fill
+    guide
+        calendar
+        size
+        base
+        offset
+        factor
+    guide
+        ...
 
 dataset
-    config
-        dtype
-        fill
-        domain
-            calendar
-            size
-            extent
-        domain
+    dtype
+    fill
+    domain
+        calendar
+        size
+        extent
+    domain
+        ...
 
 store consists of a grid and a storage
     grid contains of a number of guides
