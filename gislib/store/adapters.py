@@ -120,7 +120,7 @@ class RadarAdapter(object):
             time = h5['time']
             precipitation = h5['precipitation']
             space_extent = self._get_space_extent(h5)
-            space_size = precipitation.shape[:2]
+            space_size = precipitation.shape[-2::-1]
             unit = time.attrs['units']
             proj = 28992
             fill = -9999
@@ -137,10 +137,11 @@ class RadarAdapter(object):
                 time_domain = datasets.Domain(kind=time_kind,
                                               size=(i2 - i1,),
                                               extent=time_extent)
+                time_axes = (time[i1:i2] - time_lower) / time_span
                 dataset_kwargs = dict(
                     domains=(space_domain, time_domain),
-                    axes=((time[i1:i2] - time_lower) / time_span,),
-                    data=precipitation[:, :, i1:i2],
+                    axes=(None, time_axes),
+                    data=precipitation[:, :, i1:i2].transpose()[::-1],
                     fill=fill,
                 )
                 yield datasets.Dataset(**dataset_kwargs)

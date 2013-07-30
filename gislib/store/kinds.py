@@ -10,11 +10,13 @@ import netCDF4
 
 from gislib import rasters
 
-class NonEquidistantKind(object):
+class DiscreteKind(object):
     pass
 
+class ContinuousKind(object):
+    pass
 
-class Space(object):
+class Space(ContinuousKind):
     """ Gdal kind. """
     def __init__(self, proj):
         self.proj = proj
@@ -30,24 +32,31 @@ class Space(object):
     def __repr__(self):
         return self.__str__()
 
-    def transform(self, kind, size, extent):
-        """ Return dictionary. """
+    def transform(self, kind, size, extent, axis=None):
+        """
+        Return dictionary.
+
+        It contains transoformed size and extent when input size and
+        extent are transformed from kind to kind. This is used for
+        location determination.
+
+        Gotchas
+        - Some x, y-swapping is taking place
+        - No pincushion deforms are taken into account
+        - Size is returned unaltered
+        """
         if kind == self:
             return dict(size=size, extent=extent)
         trans_extent_flat = rasters.get_transformed_extent(
-            extent=tuple(y for x in extent for y in x),
+            extent=tuple(y for x in extent for y in x[::-1]),
             source_projection=self.proj,
             target_projection=kind.proj,
         )
-        trans_extent = trans_extent_flat[:2], trans_extent_flat[2:]
-        return dict(size=size, extent=trans_extent)
-
-    def transform_data(self, kind, size, extent, data):
-        """ Return dictionary. """
-        return dict(size='todo', extent='todo', data='todo', axes='todo')
+        trans_extent = trans_extent_flat[1::-1], trans_extent_flat[:1:-1]
+        return dict(size=size, extent=trans_extent, axis=axis)
 
 
-class Time(NonEquidistantKind):
+class Time(DiscreteKind):
     """ Timeseries kind. """
     def __init__(self, unit):
         self.unit = unit
@@ -60,8 +69,17 @@ class Time(NonEquidistantKind):
             cls=self.__class__.__name__, **self.__dict__
         )
 
-    def transform(self, kind, size, extent):
-        """ Return dictionary. """
+    def __repr__(self):
+        return self.__str__()
+
+    def transform(self, kind, size, extent, axis=None):
+        """ 
+        Return dictionary.
+
+        It contains transoformed size and extent when input size and
+        extent are transformed from kind to kind. This is used for
+        location determination.
+        """
         if kind == self:
             return dict(size=size, extent=extent)
         trans_extent = tuple(
@@ -73,8 +91,4 @@ class Time(NonEquidistantKind):
                 ),
             ),
         )
-        return dict(size=size, extent=trans_extent)
-
-    def transform_data(self, kind, size, extent, data):
-        """ Return dictionary. """
-        return dict(size='todo', extent='todo', data='todo', axes='todo')
+        return dict(size=size, extent=trans_extent, axis=axis)

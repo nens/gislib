@@ -6,6 +6,8 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
+import math
+
 from scipy import ndimage
 from osgeo import gdal
 
@@ -71,27 +73,81 @@ def _to_gdal(dataset, i):
         band.WriteArray(data[j])
 
     return dict(data=gdal_dataset, transpose=itranspose, shape=ireshape)
-   
 
-def _transform_space(source, target, i):
-    exit()
+def _slice(domain, axis, extent):
+    """
+    Return indices into axes for which points are in extent.
+
+    Not suitable for multidimensional domains.
+    """
+    values = domain.values(axis)
+    ((e1,), (e2,)) = extent
+    where = np.where(np.logical_and(values >= e1, values < e2))[0]
+    try:
+        return slice(where.min(), where.max() + 1)
+    except ValueError:
+        return slice(0, 0)
+
+def _create_source_view(source, target):
+    """
+    Returns view to the source dataset with the discrete variables
+    already transformed to their respective kinds of the target dataset,
+    clipped to contain only relevant data for reprojection into the
+    target dataset.
+    """
+    # This whole part may not be necessary, if the domains take care
+    # of building a view to the data that matches the target extent. Make
+    # code prettier :)
+    dicts = []
+    for sd, sa, td in zip(source.domains, source.axes, target.domains):
+        if isinstance(sd.kind, kinds.DiscreteKind):
+            # Transform to target kind
+            dicts.append(sd.transform(td.kind, axis=sa))
+        else:
+            # Just pass the original domains and (None) axes
+            dicts.append(dict(axis=sa, domain=sd))
     
-    
-    
-def _transform_time(source, target, i):
-    pass
+    # Convert to dataset kwargs
+    kwargs = dict(fill=source.fill,
+                  data=source.data,
+                  axes=tuple(d['axis'] for d in dicts),
+                  domains=tuple(d['domain'] for d in dicts))
+    _source = Dataset(**kwargs)
+
+    # Make a view.
+    # Discrete variables: determine slice into source axes that fits in target extent
+    # Continous variables: determine slice tuple from transformed domain extents
+    data = zip(_source.domains, _source.axes, target.domains, target.axes)
+    slices = []
+    for sd, sa, td, ta in data:
+        if isinstance(sd.kind, kinds.ContinuousKind):
+            # Going to determine the slice from size and extent in transformed domain
+            slices.extend(map(lambda i: slice(*i), sd.indices(td)))
+        else:
+            slices.append(_slice(domain=sd, axis=sa, extent=td.extent))
+    import ipdb; ipdb.set_trace() 
 
 
 def reproject(source, target):
-    """ Put relevant data from source into target. """
-    # Create a view that selects relevant indices from time (and other ned)
-    # Create a subview according to spatial domain
-    # Raise if necessary
-    # Create datasets from them and reproject.
+    """ 
+    Put relevant data from source into target. 
 
+    source   
+        translate extents using extents and axes for ned domains
+        Create a view that only holds the extents whe're interested in for
+        Then, for all ned domains:
+            Use np.in1d to determine existing values
+            Raise DoesNotFit if necessary
+    target
+        Add the non-existing values from source to axes, and sort.
+        create a view according to source axes. sort should not be necessary, but check.
 
+    Now do the spatial warp / or, later on, the aggregation operation
+    """
+    # Prepare the sourceview
+    source_view = _create_source_view(source, target)
 
-
+    exit()
         
 
 def _transform_generic(source, target):
@@ -141,12 +197,38 @@ class Domain(object):
     def __repr__(self):
         return self.__str__()
 
-    def transform(self, kind):
-        """ Return a new transformed domain. """
+    def transform(self, kind, axis=None):
+        """ Return dictionary with transformed domain and axis. """
         kwargs = self.kind.transform(kind=kind,
+                                     axis=axis,
                                      size=self.size,
                                      extent=self.extent)
-        return Domain(kind=kind, **kwargs)
+        return dict(axis=kwargs.pop('axis'),
+                    domain=Domain(kind=kind, **kwargs))
+
+    def indices(self, domain, axis=None):
+        """ 
+        Return dictionary with domain, axis and slice.
+
+        The domain argument is used to determine the section of self
+        that will be part of the new domain.
+        """
+        _domain = domain.transform(self.kind)['domain']
+
+        data = zip(self.size, zip(*self.extent), zip(*_domain.extent))
+        result = []
+        for s, (e1, e2), (_e1, _e2) in data:
+            result.append((
+                min(s, max(0, int(math.floor((_e1 - e1) / (e2 - e1) * s)))),
+                min(s, max(0, int(math.ceil((_e2 - e1) / (e2 - e1) * s))))
+            ))
+        return dict(axis=axis, domain=domain, 
+
+
+    def values(self, axis):
+        """ Return values. """
+        ((e1,), (e2,)) = self.extent
+        return e1 + axis * (e2 - e1)
 
 
 class Dataset(object):
@@ -180,6 +262,24 @@ class Dataset(object):
     @property
     def shape(self):
         return tuple(j for i in self.size for j in i)
+
+    #@property
+    #def continuous_domains(self):
+        #return (self.domains[i] for i in self.continous_indices)
+
+    #@property
+    #def continuous_indices(self):
+        #return [i for i, d in enumerate(d) 
+                #if isinstance(d.kind, kinds.ContinousKind)]
+    
+    #@property
+    #def discrete_domains(self):
+        #return (self.domains[i] for i in self.disrete_indices)
+
+    #@property
+    #def discrete_indices(self):
+        #return [i for i, d in enumerate(d) 
+                #if isinstance(d.kind, kinds.DiscreteKind)]
 
 
 class SerializableDataset(Dataset):

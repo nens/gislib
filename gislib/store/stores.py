@@ -87,7 +87,7 @@ class Guide(object):
         Return extent tuple for a sublocation
 
         Location must have a resolution level and an iterable of indices.
-        A format for a 2D-extent: ((x1, y1), (x2, y2))
+        Example format for 2D-extent: ((x1, y1), (x2, y2))
         """
         return tuple(tuple((self.base ** locus.level *
                             self.size[i] *
@@ -129,6 +129,11 @@ class Guide(object):
         # Combine the (sub)domains and return a function
         return lambda: (GuideLocus(level=level, indices=indices)
                         for indices in reduce(reducer, funcs)())
+
+    def create_axis(self):
+        """ Return axes for discrete kinds, None otherwise. """
+        if isinstance(self.kind, kinds.DiscreteKind):
+            return np.ones(self.size) * -1
 
 
 class Store(object):
@@ -196,7 +201,7 @@ class Store(object):
 
         Size and extent are with respect to store guides.
         """
-        make_domains = lambda d, g: d.transform(kind=g.kind)
+        make_domains = lambda d, g: d.transform(kind=g.kind)['domain']
         domains = map(make_domains, dataset.domains, self.guides)
         size, extent = zip(*((d.size, d.extent) for d in domains))
         return dict(size=size, extent=extent)
@@ -334,12 +339,7 @@ class Store(object):
         """
         Return empty axes for self.
         """
-        guides = tuple(g for g in self.guides
-                       if isinstance(g.kind, kinds.NonEquidistantKind))
-        return tuple(np.ones(n) * -1
-                       for s, g in zip(self.size, self.guides)
-                       for n in s if isinstance(g.kind,
-                                                kinds.NonEquidistantKind))
+        return tuple(g.create_axis() for g in self.guides)
 
     def _create_dataset(self, locus):
         """ 
