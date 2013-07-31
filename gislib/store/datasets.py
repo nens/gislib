@@ -212,7 +212,30 @@ class Domain(object):
 
         The domain argument is used to determine the section of self
         that will be part of the new domain.
+
+        Returns a dictionary with:  
+            - slices to create a view to the data
+            - new axes to replace the old axes
+            - new domains to replace the old domains
+        
+        Example case:
+            time domain:
+            ask kind to transform extent.
+            axes are automatically transformed then.
+            return indices for 
+            
+        
+        
         """
+
+
+        slices(domain.kind)
+        axes = domain.kind.viewaxes(
+        kind = domain.kind
+        extent = domain.extent
+        size = domain.size
+        self.kind.indices(kind=kind, extent=extent, 
+        kwargs = self.kind.indices(
         _domain = domain.transform(self.kind)['domain']
 
         data = zip(self.size, zip(*self.extent), zip(*_domain.extent))
@@ -222,8 +245,9 @@ class Domain(object):
                 min(s, max(0, int(math.floor((_e1 - e1) / (e2 - e1) * s)))),
                 min(s, max(0, int(math.ceil((_e2 - e1) / (e2 - e1) * s))))
             ))
-        return dict(axis=axis, domain=domain, 
 
+        slices
+        return dict(axis=axis, domain=domain, slices=slices
 
     def values(self, axis):
         """ Return values. """
