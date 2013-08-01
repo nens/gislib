@@ -5,7 +5,7 @@ Changelog of gislib
 0.2 (unreleased)
 ----------------
 
-- Nothing changed yet.
+- Use signed integers for pyramid indices.
 
 
 0.1 (2013-05-18)
