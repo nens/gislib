@@ -432,8 +432,8 @@ class Pyramid(AbstractGeoContainer):
         )
         # Return generator
         return ((x, y)
-                for y in np.arange(y1, y2 + 1, dtype=np.uint32)
-                for x in np.arange(x1, x2 + 1, dtype=np.uint32))
+                for y in np.arange(y1, y2 + 1, dtype=np.int64)
+                for x in np.arange(x1, x2 + 1, dtype=np.int64))
 
     def _add(self, dataset, level=0):
         """
