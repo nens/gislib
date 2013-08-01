@@ -2,8 +2,8 @@ Changelog of gislib
 ===================================================
 
 
-0.2 (unreleased)
-----------------
+0.1.1 (2013-08-01)
+------------------
 
 - Use signed integers for pyramid indices.
 
