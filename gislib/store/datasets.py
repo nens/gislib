@@ -221,15 +221,18 @@ class Domain(object):
         return dict(axes=kwargs.pop('axes'),
                     domain=Domain(kind=kind, **kwargs))
 
-    def get_slices(self, domain, axes):
+    def get_sliced(self, domain, axes):
         """ Return slices tuple. """
         transformed = domain.get_transformed(kind=self.kind, axes=axes)
-        kwargs = dict(axes=axes,
-                      size=self.size,
-                      extent=self.extent,
-                      clip_axes=transformed['axes'],
-                      clip_extent=transformed['domain'].extent)
-        return self.kind.get_slices(**kwargs)
+        get_sliced_kwargs = dict(axes=axes,
+                                 size=self.size,
+                                 extent=self.extent,
+                                 clip_axes=transformed['axes'],
+                                 clip_extent=transformed['domain'].extent)
+        kwargs = self.kind.get_sliced(**get_sliced_kwargs)
+        return dict(axes=kwargs.pop('axes'),
+                    slices=kwargs.pop('slices'),
+                    domain=Domain(self.kind, **kwargs))
 
     def values(self, axis):
         """ Return values. """
@@ -275,7 +278,7 @@ class Dataset(object):
         all domains that are not raster domains.
         """
         stuff = zip(self.domains, self.axes, dataset.domains)
-        slices = [sd.get_slices(td, axes=sa)
+        slices = [sd.get_sliced(td, axes=sa)
                   for sd, sa, td in stuff]
         axes = tuple(tuple(sa[ss] if a else ()
                            for ss, sa in zip(s, a))
