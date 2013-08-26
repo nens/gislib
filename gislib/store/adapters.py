@@ -137,10 +137,10 @@ class RadarAdapter(object):
                 time_domain = datasets.Domain(kind=time_kind,
                                               size=(i2 - i1,),
                                               extent=time_extent)
-                time_axes = (time[i1:i2] - time_lower) / time_span
+                time_axes = (time[i1:i2] - time_lower) / time_span,
                 dataset_kwargs = dict(
                     domains=(space_domain, time_domain),
-                    axes=(None, time_axes),
+                    axes=((), time_axes),
                     data=precipitation[:, :, i1:i2].transpose()[::-1],
                     fill=fill,
                 )

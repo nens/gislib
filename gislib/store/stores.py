@@ -130,10 +130,11 @@ class Guide(object):
         return lambda: (GuideLocus(level=level, indices=indices)
                         for indices in reduce(reducer, funcs)())
 
-    def create_axis(self):
+    def create_axes(self):
         """ Return axes for discrete kinds, None otherwise. """
         if isinstance(self.kind, kinds.DiscreteKind):
-            return np.ones(self.size) * -1
+            return tuple(np.ones(s) * -1 for s in self.size)
+        return ()
 
 
 class Store(object):
@@ -201,7 +202,9 @@ class Store(object):
 
         Size and extent are with respect to store guides.
         """
-        make_domains = lambda d, g: d.transform(kind=g.kind)['domain']
+        def make_domains(d, g):
+            return d.get_transformed(kind=g.kind, axes=())['domain']
+
         domains = map(make_domains, dataset.domains, self.guides)
         size, extent = zip(*((d.size, d.extent) for d in domains))
         return dict(size=size, extent=extent)
@@ -339,7 +342,7 @@ class Store(object):
         """
         Return empty axes for self.
         """
-        return tuple(g.create_axis() for g in self.guides)
+        return tuple(g.create_axes() for g in self.guides)
 
     def _create_dataset(self, locus):
         """ 
@@ -392,15 +395,24 @@ class Store(object):
                         reproject(source, target)  # should fit now
                         grid.remove_dataset(locus) # data has moved
                         yield sublocus
-            exit()
-    
 
     def fill_into(self, dataset):
         """
         Fill dataset with data from the store.
+
+        Returns a generator of updated locations.
         """
         for location in self.frame.config.get_locations(dataset.config):
             #string = self.databox[location.key]
             #t = self.get_dataset(location)
             #datasets.reproject(t, dataset)
             datasets.reproject(self.get_dataset(location), dataset)
+
+    def get_adapter(self, dataset=None):
+        """
+        Return an adapter for this store.
+
+        If dataset is given, limit the extent of the returned data to
+        datasets extent.
+        """
+        raise NotImplementedError()

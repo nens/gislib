@@ -125,7 +125,9 @@ def _create_source_view(source, target):
             slices.extend(map(lambda i: slice(*i), sd.indices(td)))
         else:
             slices.append(_slice(domain=sd, axis=sa, extent=td.extent))
-    import ipdb; ipdb.set_trace() 
+
+def _transform_spatial(source_view, target_view):
+    pass
 
 
 def reproject(source, target):
@@ -144,11 +146,24 @@ def reproject(source, target):
 
     Now do the spatial warp / or, later on, the aggregation operation
     """
-    # Prepare the sourceview
-    source_view = _create_source_view(source, target)
+    # Need an as fast as possible copydata operation, when kinds and
+    # extents are equal, and axes are too, or empty.
 
-    exit()
-        
+    # source  |............|
+    # target        |............|
+    # source_view   |......|
+    # target_view   |......|
+
+
+    source_view = source.get_view(target)  # Raises DoesNotFitError
+    target_view = source.get_view(source_view) # Will that work?
+
+    source_indices = np.not_equal(source.axes[1], -1)
+
+
+    transformed_source = _transform_spatial(source_view, target_view)
+    target_view[source_indices] = transformed_source[source_indices]
+
 
 def _transform_generic(source, target):
     """ Just affine transformation of equidistant grids. """
@@ -197,57 +212,24 @@ class Domain(object):
     def __repr__(self):
         return self.__str__()
 
-    def transform(self, kind, axis=None):
+    def get_transformed(self, kind, axes):
         """ Return dictionary with transformed domain and axis. """
-        kwargs = self.kind.transform(kind=kind,
-                                     axis=axis,
-                                     size=self.size,
-                                     extent=self.extent)
-        return dict(axis=kwargs.pop('axis'),
+        kwargs = self.kind.get_transformed(kind=kind,
+                                           axes=axes,
+                                           size=self.size,
+                                           extent=self.extent)
+        return dict(axes=kwargs.pop('axes'),
                     domain=Domain(kind=kind, **kwargs))
 
-    def indices(self, domain, axis=None):
-        """ 
-        Return dictionary with domain, axis and slice.
-
-        The domain argument is used to determine the section of self
-        that will be part of the new domain.
-
-        Returns a dictionary with:  
-            - slices to create a view to the data
-            - new axes to replace the old axes
-            - new domains to replace the old domains
-        
-        Example case:
-            time domain:
-            ask kind to transform extent.
-            axes are automatically transformed then.
-            return indices for 
-            
-        
-        
-        """
-
-
-        slices(domain.kind)
-        axes = domain.kind.viewaxes(
-        kind = domain.kind
-        extent = domain.extent
-        size = domain.size
-        self.kind.indices(kind=kind, extent=extent, 
-        kwargs = self.kind.indices(
-        _domain = domain.transform(self.kind)['domain']
-
-        data = zip(self.size, zip(*self.extent), zip(*_domain.extent))
-        result = []
-        for s, (e1, e2), (_e1, _e2) in data:
-            result.append((
-                min(s, max(0, int(math.floor((_e1 - e1) / (e2 - e1) * s)))),
-                min(s, max(0, int(math.ceil((_e2 - e1) / (e2 - e1) * s))))
-            ))
-
-        slices
-        return dict(axis=axis, domain=domain, slices=slices
+    def get_slices(self, domain, axes):
+        """ Return slices tuple. """
+        transformed = domain.get_transformed(kind=self.kind, axes=axes)
+        kwargs = dict(axes=axes,
+                      size=self.size,
+                      extent=self.extent,
+                      clip_axes=transformed['axes'],
+                      clip_extent=transformed['domain'].extent)
+        return self.kind.get_slices(**kwargs)
 
     def values(self, axis):
         """ Return values. """
@@ -286,6 +268,22 @@ class Dataset(object):
     @property
     def shape(self):
         return tuple(j for i in self.size for j in i)
+
+    def get_view(self, dataset):
+        """
+        Return a dataset view that matches the extents of dataset for
+        all domains that are not raster domains.
+        """
+        stuff = zip(self.domains, self.axes, dataset.domains)
+        slices = [sd.get_slices(td, axes=sa)
+                  for sd, sa, td in stuff]
+        axes = tuple(tuple(sa[ss] if a else ()
+                           for ss, sa in zip(s, a))
+                     for a, s in zip(self.axes, slices))
+        domains = tuple(d[s] for d, s in zip(self.domains, slices))
+
+        
+            
 
     #@property
     #def continuous_domains(self):

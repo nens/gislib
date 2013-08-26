@@ -1,96 +1,23 @@
-Datastore for gridded data
-==========================
-The databox has 
-    complete data - the original datasets
-    location only data 
-        - to indicate the extent of the dataset.
+Bottlenecks
+===========
+Structure:
+    databox schema has the original datasets and location-only values.
+        - indicating extent of dataset
         - synced on every update
         - used by update process to find data that is to be combined with new data.
-    Updating ned data:
-        - discern cases:
-            - empty store and single point: put it at level 0
-            - if new data arives:
-                determine old root
-                determine new root
-                if new root: update locations
-                determine existing data
-                determine new data
-                combine, reproject, if does-not-fit:
-                    put in children.
-                
-                determine new location
 
+    links: for first aggregator data, original data is linked to via
+        symlinks (if possible) or empty values (in key-value
+        store). Storage should handle this without the datastore knowing.
+    locations for single points: Level 0. This should be checked when
+        updating and rootfinding mechanisms.
 
-                determine old data to incorporate
-                determine new data
-                determine new extent
-            - empty strings (files) in aggregators are links to one-level-up. So from second guide aggregator to first guide aggregator, and from first guide aggregator to databox.
+Aggregators:    
+    - Sort all updated locations per parent and update parents, until
+    only one element is left in the top level chunk.
 
-                    
-
-
-
-Terminology
------------
-store
-    dtype
-    fill
-    guide
-        calendar
-        size
-        base
-        offset
-        factor
-    guide
-        ...
-
-dataset
-    dtype
-    fill
-    domain
-        calendar
-        size
-        extent
-    domain
-        ...
-
-store consists of a grid and a storage
-    grid contains of a number of guides
-
-dataset consists of config, axes and data
-    config contains of a number of domains
-
-
-Roadmap
--------
-Update workflow::
-    Determine locations (and remember)
-    try:
-        reproject
-        store
-        yield_location
-    except DoesNotFitError(dimension) as e: 
-        # We have ned data that does not fit
-        for child_location in location.get_children(dimension):
-            reproject
-            store
-            yield child_location
-        remove location
-
-Reproject::
-    if configs equal:
-        assign and return
-    gdaldimension: reproject
-    timedimension: recalendar and affine
-    ned time time dimension: modify axes and data
-
-
-
-
-We have a lowlevel storage facility. It must have some config:
-    - Addition to other store: get_adapter() method for stores;
-    - get_locations_for_config(self, config):
-        like get_locations, but takes into account projections. method of FrameConfig.
+Wishes:
+    - have get_locations return locations sorted per parent location in all directions.
 
 Reproject: 
     Immediately if projections and calendars and extents are matching
@@ -126,27 +53,6 @@ Adapters:
     - Only when aggregating
     - Investigate for get_root vs just trying all datasets at a level.
 
-Datatructure
-============
-Store
-    (Aggregators)
-    Storage
-    Frame
-        FrameConfig
-            FrameScale(dimension, offset, scale, factor)
-            FrameScale...
-            ...
-
-Dataset
-    Config
-        Domain(dimension, extent)
-        Domain...
-        ...
-    Axes
-    Data
-
-Location becomes just a container. Ask your frame config for the extent
-of a location, or the root, or the parents or children.
 
 Aggregation system
 ------------------
