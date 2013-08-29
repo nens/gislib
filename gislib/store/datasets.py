@@ -134,7 +134,20 @@ def reproject(source, target):
     """ 
     Put relevant data from source into target. 
 
-    source   
+    source
+        Time dimension: 
+            - Create a view:
+                - New extents matching those of the target
+                - New axes according to new extent
+                - Sliced data to contain only extent of target
+        Space dimension:
+            - Create a view based on above view:
+                - Slice based on backtransformed target extent
+                - New extents according to slices
+
+                
+              
+
         translate extents using extents and axes for ned domains
         Create a view that only holds the extents whe're interested in for
         Then, for all ned domains:
@@ -154,15 +167,16 @@ def reproject(source, target):
     # source_view   |......|
     # target_view   |......|
 
+    source_view = source.get_view(target)  # Raises DoesNotFitError?
+    target_view = target.get_view(source) # Will that work?
+    if source_view.data.size and target_view.data.size:
+        import ipdb; ipdb.set_trace()
+    print(source_view.shape)
+    print(target_view.shape)
 
-    source_view = source.get_view(target)  # Raises DoesNotFitError
-    target_view = source.get_view(source_view) # Will that work?
 
-    source_indices = np.not_equal(source.axes[1], -1)
-
-
-    transformed_source = _transform_spatial(source_view, target_view)
-    target_view[source_indices] = transformed_source[source_indices]
+    #source_indices = np.not_equal(source.axes[1], -1)
+    #transformed_source = _transform_spatial(source_view, target_view)
 
 
 def _transform_generic(source, target):
@@ -212,33 +226,37 @@ class Domain(object):
     def __repr__(self):
         return self.__str__()
 
-    def get_transformed(self, kind, axes):
-        """ Return dictionary with transformed domain and axis. """
-        kwargs = self.kind.get_transformed(kind=kind,
-                                           axes=axes,
-                                           size=self.size,
-                                           extent=self.extent)
-        return dict(axes=kwargs.pop('axes'),
-                    domain=Domain(kind=kind, **kwargs))
+    def transform(self, kind):
+        """ Return transformed Domain. """
+        if kind == self.kind:
+            return self
+        extent = self.kind.transform(extent=self.extent, kind=kind)
+        return Domain(kind=kind, extent=extent, size=self.size)
 
-    def get_sliced(self, domain, axes):
-        """ Return slices tuple. """
-        transformed = domain.get_transformed(kind=self.kind, axes=axes)
-        get_sliced_kwargs = dict(axes=axes,
-                                 size=self.size,
-                                 extent=self.extent,
-                                 clip_axes=transformed['axes'],
-                                 clip_extent=transformed['domain'].extent)
-        kwargs = self.kind.get_sliced(**get_sliced_kwargs)
-        return dict(axes=kwargs.pop('axes'),
-                    slices=kwargs.pop('slices'),
-                    domain=Domain(self.kind, **kwargs))
 
     def values(self, axis):
         """ Return values. """
         ((e1,), (e2,)) = self.extent
         return e1 + axis * (e2 - e1)
 
+
+def get_prep(source_domain, source_axes, target_domain, target_axes):
+    """ 
+    Return dictionary with slices, axes and domain.
+    """
+    transformed = target_domain.transform(kind=source_domain.kind)
+
+    kwargs = source_domain.kind.get_prep(
+        source_size=source_domain.size,
+        source_extent=source_domain.extent,
+        source_axes=source_axes,
+        target_extent=transformed.extent,
+        target_axes=target_axes,
+    )
+    
+    return dict(axes=kwargs.pop('axes'),
+                slices=kwargs.pop('slices'),
+                domain=Domain(source_domain.kind, **kwargs))
 
 class Dataset(object):
     def __init__(self, domains, axes, data, fill):
@@ -275,37 +293,20 @@ class Dataset(object):
     def get_view(self, dataset):
         """
         Return a dataset view that matches the extents of dataset for
-        all domains that are not raster domains.
+        all domains that are not raster domains. The time domain is
+        already converted to those of dataset.
         """
-        stuff = zip(self.domains, self.axes, dataset.domains)
-        slices = [sd.get_sliced(td, axes=sa)
-                  for sd, sa, td in stuff]
-        axes = tuple(tuple(sa[ss] if a else ()
-                           for ss, sa in zip(s, a))
-                     for a, s in zip(self.axes, slices))
-        domains = tuple(d[s] for d, s in zip(self.domains, slices))
-
-        
-            
-
-    #@property
-    #def continuous_domains(self):
-        #return (self.domains[i] for i in self.continous_indices)
-
-    #@property
-    #def continuous_indices(self):
-        #return [i for i, d in enumerate(d) 
-                #if isinstance(d.kind, kinds.ContinousKind)]
-    
-    #@property
-    #def discrete_domains(self):
-        #return (self.domains[i] for i in self.disrete_indices)
-
-    #@property
-    #def discrete_indices(self):
-        #return [i for i, d in enumerate(d) 
-                #if isinstance(d.kind, kinds.DiscreteKind)]
-
+        # Have domains prepare for view creation
+        preps = map(get_prep, 
+                    self.domains, self.axes, dataset.domains, dataset.axes)
+        axes = tuple(p['axes'] for p in preps)
+        slices = tuple(s for p in preps for s in p['slices'])
+        return Dataset(
+            domains=tuple(p['domain'] for p in preps),
+            axes=axes,
+            data=self.data[slices],  # Here the actual view is created
+            fill=self.fill,
+        )
 
 class SerializableDataset(Dataset):
     """ Dataset with a location attribute and a tostring() method. """

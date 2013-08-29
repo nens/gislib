@@ -1,21 +1,5 @@
 Bottlenecks
 ===========
-Structure:
-    databox schema has the original datasets and location-only values.
-        - indicating extent of dataset
-        - synced on every update
-        - used by update process to find data that is to be combined with new data.
-
-    links: for first aggregator data, original data is linked to via
-        symlinks (if possible) or empty values (in key-value
-        store). Storage should handle this without the datastore knowing.
-    locations for single points: Level 0. This should be checked when
-        updating and rootfinding mechanisms.
-
-Aggregators:    
-    - Sort all updated locations per parent and update parents, until
-    only one element is left in the top level chunk.
-
 Wishes:
     - have get_locations return locations sorted per parent location in all directions.
 

@@ -203,7 +203,7 @@ class Store(object):
         Size and extent are with respect to store guides.
         """
         def make_domains(d, g):
-            return d.get_transformed(kind=g.kind, axes=())['domain']
+            return d.transform(kind=g.kind)
 
         domains = map(make_domains, dataset.domains, self.guides)
         size, extent = zip(*((d.size, d.extent) for d in domains))
