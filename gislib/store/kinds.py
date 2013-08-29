@@ -50,8 +50,7 @@ class Space(ContinuousKind):
         )
         return trans_extent_flat[1::-1], trans_extent_flat[:1:-1]
 
-    def get_prep(self, source_size, source_extent, 
-                 source_axes, target_extent, target_axes):
+    def get_prep(self, source_size, source_extent, source_axes, target_extent):
         """ 
         Return dictionary.
 
@@ -116,42 +115,35 @@ class Time(DiscreteKind):
             ),
         )
     
-    def get_prep(self, source_size, source_extent, 
-                 source_axes, target_extent, target_axes):
+    def get_prep(self, source_size, source_extent, source_axes, target_extent):
         """ 
         Return dictionary.
 
         Source and target must be of kind self.
 
         Remove values from source axes that are outside targets extent
-        Adjust source extent and scale axes accordingly
 
         size: cropped size
         extent: cropped extent?
         axes: clipped axes
         slices: clipping slices based on axes & extent
 
-        Here comes the fun: The time kind gets the responsibility of
-        checking available space in the axes.
-
-        The check is only performed if the extents after clipping are
-        completely aligned, which will be the case after the source_view
-        is used to create a target_view.
         """
-        ((e1,), (e2,)) = extent
-        ((c1,), (c2,)) = clip
-        values = e1 + axes[0] * (e2 - e1)
-        indices = np.where((values >= c1) * (values < c2) * (axes[0] != -1))[0]
+        ((se1,), (se2,)) = source_extent
+        ((te1,), (te2,)) = target_extent
+        times = se1 + source_axes[0] * (se2 - se1)
+        axis = (times - te1) / (te2 -te1)
+        indices = np.where((axis >= 0) *
+                           (axis < 1) * 
+                           (source_axes[0] != -1))[0]
         if indices.size:
             slices =  (slice(indices[0], indices[-1] + 1),)
         else:
             slices =  (slice(0, 0),)
 
-        import ipdb; ipdb.set_trace() 
-
         return dict(
             size=(slices[0].stop - slices[0].start,),
-            extent=extent,
-            axes=tuple(a[s] for a, s in zip(axes, slices)),
+            extent=target_extent,
+            axes=(axis[slices],),
             slices=slices,
         )

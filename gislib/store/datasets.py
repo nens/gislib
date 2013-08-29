@@ -74,61 +74,6 @@ def _to_gdal(dataset, i):
 
     return dict(data=gdal_dataset, transpose=itranspose, shape=ireshape)
 
-def _slice(domain, axis, extent):
-    """
-    Return indices into axes for which points are in extent.
-
-    Not suitable for multidimensional domains.
-    """
-    values = domain.values(axis)
-    ((e1,), (e2,)) = extent
-    where = np.where(np.logical_and(values >= e1, values < e2))[0]
-    try:
-        return slice(where.min(), where.max() + 1)
-    except ValueError:
-        return slice(0, 0)
-
-def _create_source_view(source, target):
-    """
-    Returns view to the source dataset with the discrete variables
-    already transformed to their respective kinds of the target dataset,
-    clipped to contain only relevant data for reprojection into the
-    target dataset.
-    """
-    # This whole part may not be necessary, if the domains take care
-    # of building a view to the data that matches the target extent. Make
-    # code prettier :)
-    dicts = []
-    for sd, sa, td in zip(source.domains, source.axes, target.domains):
-        if isinstance(sd.kind, kinds.DiscreteKind):
-            # Transform to target kind
-            dicts.append(sd.transform(td.kind, axis=sa))
-        else:
-            # Just pass the original domains and (None) axes
-            dicts.append(dict(axis=sa, domain=sd))
-    
-    # Convert to dataset kwargs
-    kwargs = dict(fill=source.fill,
-                  data=source.data,
-                  axes=tuple(d['axis'] for d in dicts),
-                  domains=tuple(d['domain'] for d in dicts))
-    _source = Dataset(**kwargs)
-
-    # Make a view.
-    # Discrete variables: determine slice into source axes that fits in target extent
-    # Continous variables: determine slice tuple from transformed domain extents
-    data = zip(_source.domains, _source.axes, target.domains, target.axes)
-    slices = []
-    for sd, sa, td, ta in data:
-        if isinstance(sd.kind, kinds.ContinuousKind):
-            # Going to determine the slice from size and extent in transformed domain
-            slices.extend(map(lambda i: slice(*i), sd.indices(td)))
-        else:
-            slices.append(_slice(domain=sd, axis=sa, extent=td.extent))
-
-def _transform_spatial(source_view, target_view):
-    pass
-
 
 def reproject(source, target):
     """ 
@@ -167,8 +112,8 @@ def reproject(source, target):
     # source_view   |......|
     # target_view   |......|
 
-    source_view = source.get_view(target)  # Raises DoesNotFitError?
-    target_view = target.get_view(source) # Will that work?
+    source_view = source.get_view(dataset=target, check=True)
+    target_view = target.get_view(dataset=source, check=False)
     if source_view.data.size and target_view.data.size:
         import ipdb; ipdb.set_trace()
     print(source_view.shape)
@@ -240,7 +185,7 @@ class Domain(object):
         return e1 + axis * (e2 - e1)
 
 
-def get_prep(source_domain, source_axes, target_domain, target_axes):
+def get_prep(source_domain, source_axes, target_domain):
     """ 
     Return dictionary with slices, axes and domain.
     """
@@ -251,7 +196,6 @@ def get_prep(source_domain, source_axes, target_domain, target_axes):
         source_extent=source_domain.extent,
         source_axes=source_axes,
         target_extent=transformed.extent,
-        target_axes=target_axes,
     )
     
     return dict(axes=kwargs.pop('axes'),
@@ -290,17 +234,37 @@ class Dataset(object):
     def shape(self):
         return tuple(j for i in self.size for j in i)
 
-    def get_view(self, dataset):
+    def get_view(self, dataset, check=True):
         """
-        Return a dataset view that matches the extents of dataset for
-        all domains that are not raster domains. The time domain is
-        already converted to those of dataset.
+        Return a dataset view of self with the domain kinds converted
+        to the domain kinds of dataset and the domain extents cropped
+        to the domain extents of dataset.
+
+        If check == True, check if the discrete kinds of self fit into
+        dataset. If check == False, it is assumed a target is being
+        cropped to a source and no cropping of discrete domains takes
+        place.
         """
         # Have domains prepare for view creation
         preps = map(get_prep, 
-                    self.domains, self.axes, dataset.domains, dataset.axes)
+                    self.domains, self.axes, dataset.domains)
+        
+        for prep, source, target in zip(preps, self.axes, dataset.axes):
+            if isinstance(prep['domain'].kind, kinds.DiscreteKind):
+                if check:
+                    # Do check if axes fit
+                    import ipdb; ipdb.set_trace() 
+                else:
+                    # No cropping for discrete kinds
+                    prep.update(domain=self.domain,
+                                axes=self.axes,
+                                slices=(slice(None),))
+
+
+
         axes = tuple(p['axes'] for p in preps)
         slices = tuple(s for p in preps for s in p['slices'])
+        
         return Dataset(
             domains=tuple(p['domain'] for p in preps),
             axes=axes,
