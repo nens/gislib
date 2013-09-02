@@ -6,413 +6,239 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
-import collections
 import hashlib
 import math
 import pickle
 
+from osgeo import gdal
+from osgeo import ogr
+
 import numpy as np
 
-from gislib.store import datasets
-from gislib.store import kinds
+from gislib.store import storages
 
-GuideLocus = collections.namedtuple('Locus', ('level', 'indices'))
+gdal.UseExceptions()
+ogr.UseExceptions()
+
+def points2polygon(points):
+    """ 
+    Return a polygon geometry.
+
+    This method numpy to prepare a wkb string. Seems only faster for
+    larger polygons, compared to adding points individually.
+    """
+    # 13 bytes for the header, 16 bytes per point
+    nbytes = 13 + 16 * points.shape[0]
+    data = np.empty(nbytes, dtype=np.uint8)
+    # little endian
+    data[0:1] = 1
+    # wkb type, number of rings, number of points
+    data[1:13].view(np.uint32)[:] = (3, 1, points.shape[0])
+    # set the points
+    data[13:].view(np.float64)[:] = points.ravel()
+    return ogr.CreateGeometryFromWkb(data.tostring())
 
 
-class GridLocus(object):
-    """ Defines a location in a frame. """
-    def __init__(self, loci):
-        self.loci = loci
+def extent2polygon(xmin, ymin, xmax, ymax):
+    """ Return an extent polygon. """
+    ring = ogr.Geometry(ogr.wkbLinearRing)
+    ring.AddPoint_2D(xmin, ymin)
+    ring.AddPoint_2D(xmax, ymin)
+    ring.AddPoint_2D(xmax, ymax)
+    ring.AddPoint_2D(xmin, ymax)
+    ring.AddPoint_2D(xmin, ymin)
+    polygon = ogr.Geometry(ogr.wkbPolygon)
+    polygon.AddGeometry(ring)
+    return polygon
+    
+
+def dataset2polygon(dataset):
+    """ Return polygon formed by pixel edges. """
+    nx, ny = dataset.RasterXSize, dataset.RasterYSize
+    npoints = 2 * (nx + ny) + 1
+    # Construct a wkb array for speed
+    nbytes = 13 + 16 * npoints
+    data = np.empty(nbytes, dtype=np.uint8)
+    data[0:1] = 1  # little endian
+    # wkb type, number of rings, number of points
+    numbers = data[1:13].view(np.uint32)[:] = [3, 1, npoints]
+    points = data[13:].view(np.float64).reshape(npoints, 2)
+
+    # Construct pixel indices arrays
+    px = np.empty(npoints, dtype=np.uint64)
+    py = np.empty(npoints, dtype=np.uint64)
+    # top
+    a, b = 0, nx
+    px[a:b] = np.arange(nx)
+    py[a:b] = 0
+    # right
+    a, b = nx, nx + ny
+    px[a:b] = nx
+    py[a:b] = np.arange(ny)
+    # bottom
+    a, b = nx + ny, 2 * nx + ny
+    px[a:b] = np.arange(nx, 0, -1)
+    py[a:b] = ny
+    # left
+    a, b = 2 * nx + ny, 2 * (nx + ny)
+    px[a:b] = 0
+    py[a:b] = np.arange(ny, 0, -1)
+    # repeat first
+    px[-1], py[-1] = 0, 0
+
+    # Use geotransform to convert the points to coordinates
+    xul, dxx, dxy, yul, dyx, dyy = dataset.GetGeoTransform()
+    points[:, 0] = xul + dxx * px + dxy * py
+    points[:, 1] = yul + dyx * px + dyy * py
+
+    return points2polygon(points)
+    
+
+class Location(object):
+    def __init__(self, time, level, indices):
+        """ x, y, and t refer to block indices. """
+        self.time = time
+        self.level = level
+        self.indices = indices
         self.key = hashlib.md5(self.tostring()).hexdigest()
 
     def tostring(self):
+        """ Return string. """
         return self.toarray().tostring()
 
     def toarray(self):
-        return np.int64([j for l, i in self.loci for j in (l,) + i])
-
+        """ Return array. """
+        return np.int64((self.time,) + (self.level,) + self.indices)
+    
     def __str__(self):
-        return '<Locus: {}>'.format(self.toarray())
+        return '<Location: {}>'.format(self.toarray())
 
     def __repr__(self):
-        return '<Locus: {}>'.format(self.toarray())
-
-    def __eq__(self, locus):
-        return self.tostring() == locus.tostring()
-
-
-class Guide(object):
-    """ Base class for guides. """
-    def __init__(self, kind, size, offset=None, factor=None, base=2):
-        self.kind = kind
-        self.size = size  # Size of chunk for this domain
-        self.base = base  # resolution ratio between levels
-        multiplicity = len(size)
-
-        # Domain factor with respect to the base unit
-        if factor is None:
-            self.factor = (1,) * multiplicity
-        else:
-            self.factor = factor
-
-        # Tile origin offset
-        if offset is None:
-            self.offset = (0,) * multiplicity
-        else:
-            self.offset = offset
-
-    def __iter__(self):
-        """ Convenience for the deserialization of locations. """
-        return (None for s in self.size)
-
-    def get_domain(self, extent, size):
-        """ Return domain for use in dataset config. """
-        return datasets.Domain(kind=self.kind, extent=extent, size=size)
-
-    def get_level(self, extent, size):
-        """
-        Return integer.
-
-        Level 0 is defined as the level where the smallest side
-        of a cell spans exactly one unit multiplied by factor.
-        """
-        return int(math.floor(math.log(
-            min((e2 - e1) / s / f
-                for s, f, e1, e2 in zip(size, self.factor, *extent)),
-            self.base,
-        )))
-
-    def get_extent(self, locus):
-        """
-        Return extent tuple for a sublocation
-
-        Location must have a resolution level and an iterable of indices.
-        Example format for 2D-extent: ((x1, y1), (x2, y2))
-        """
-        return tuple(tuple((self.base ** locus.level *
-                            self.size[i] *
-                            (locus.indices[i] + j) + self.offset[i])
-                           for i in range(len(locus.indices)))
-                     for j in (0, 1))
-
-    def get_loci(self, extent, level):
-        """
-        Return a function that, when called, returns a generator of loci.
-
-        Why a function? So reduce() can be used to iterate over all the
-        locations of all the domains of the enclosing structure.
-
-        If resolution does not exactly match, locations for the next
-        matching higher resolutions are returned.
-        """
-        # Determine the block span at requested level
-        span = tuple(self.base ** level * s * f
-                     for s, f in zip(self.size, self.factor))
-        # Determine the ranges for the indices
-        irange = map(
-            xrange,
-            (int(math.floor((e - o) / s))
-             for e, o, s in zip(extent[0], self.offset, span)),
-            (int(math.ceil((e - o) / s))
-             for e, o, s in zip(extent[1], self.offset, span)),
-        )
-
-        # Prepare for reduce by creating a list of functions
-        get_func = lambda r: lambda: ((i,) for i in r)
-        funcs = [get_func(r) for r in irange]
-
-        # Reduce by nesting the generators, combine with level and return
-        # again a function.
-        def reducer(f1, f2):
-            return lambda: (i + j for j in f2() for i in f1())
-
-        # Combine the (sub)domains and return a function
-        return lambda: (GuideLocus(level=level, indices=indices)
-                        for indices in reduce(reducer, funcs)())
-
-    def create_axes(self):
-        """ Return axes for discrete kinds, None otherwise. """
-        if isinstance(self.kind, kinds.DiscreteKind):
-            return tuple(np.ones(s) * -1 for s in self.size)
-        return ()
+        return '<Location: {}>'.format(self.toarray())
 
 
 class Store(object):
-    """
-    Raster object with optional arguments including.
-    """
-    CONFIG_KEY = 'config'
 
-    def __init__(self, storage, **kwargs):
-        """
-        Separate schemas in the storage are placed as attributes on
-        the store.
-        """
-        # Init schemas
-        for schema in ('databox', 'metabox', 'config', 'metadata'):
-            split = False if schema == 'config' else True
-            setattr(self, schema, storage.get_schema(schema, split=split))
+    # Names
+    DATA = 'data'
 
-        # Add a schema for each aggregator when they are added.
-        # TODO
+    def __init__(self, path):
+        """ Initialize a store from a path. """
+        self.storage = storages.FileStorage(path)
+        self.conf = self.storage.get_schema('conf', split=False)
 
-        if kwargs:
-            # New store
-            self._check_if_new()
-            self.config[self.CONFIG_KEY] = pickle.dumps(kwargs)
-            init_kwargs = kwargs
-        else:
-            # Existing store
-            init_kwargs = pickle.loads(self.config[self.CONFIG_KEY])
-
-        self.guides = init_kwargs['guides']
-        self.dtype = init_kwargs['dtype']
-        self.fill = init_kwargs['fill']
-
-        self.locus_size = 8 * sum([1 + len(g.size) for g in self.guides])
-        self.axes_size = 0
-
-    def _check_if_new(self):
-        """ If the store already has a config, raise an exception. """
         try:
-            self.config[self.CONFIG_KEY]
+            self.data = pickle.loads(self.conf[self.DATA])
         except KeyError:
-            return  # That's expected.
-        raise IOError('Store already has a structure!')
+            pass
 
-    @property
-    def size(self):
-        return tuple(d.size for d in self.guides)
+    
+    def create_data(self, **kwargs):
+        schema = self.storage.get_schema(self.DATA, split=True)
+        self.data = Data(schema=schema, **kwargs)
+        self.conf[self.DATA] = pickle.dumps(self.data)
 
-    @property
-    def shape(self):
-        return tuple(j for i in self.size for j in i)
+    def __setitem__(self, indices, dataset):
+        """ Previously the pyramids add method """
+        polygon = dataset2polygon(dataset)
+        location = Location(time=0, level=0, indices=(0,0))
+        print(self.data.grid.get_polygon(location))
+        from arjan.monitor import Monitor; mon = Monitor() 
+        for i in range(1):
+            location = self.data.grid.get_location(polygon)
+        mon.check('') 
 
-    # =========================================================================
-    # Location handling
-    # -------------------------------------------------------------------------
-    def _get_extent(self, locus):
-        """ Return extent tuple. """
-        return tuple(d.get_extent(s)
-                     for s, d in zip(locus.loci, self.guides))
+        exit()
 
-    def _get_trans_geom(self, dataset):
-        """
-        Return dictionary with size and extent.
-
-        Size and extent are with respect to store guides.
-        """
-        def make_domains(d, g):
-            return d.transform(kind=g.kind)
-
-        domains = map(make_domains, dataset.domains, self.guides)
-        size, extent = zip(*((d.size, d.extent) for d in domains))
-        return dict(size=size, extent=extent)
-
-    def _get_loci(self, dataset):
-        """
-        Return a generator of loci.
-        """
-        # Need to determine size and extent in stores kinds.
-        geom = self._get_trans_geom(dataset)
-        size = geom['size']
-        extent = geom['extent']
-
-        # Determine the appropriate levels
-        level = tuple(g.get_level(e, s)
-                      for g, s, e in zip(self.guides, size, extent))
-
-        # Get the funcs that return the per-dimension locus generators
-        funcs = (g.get_loci(e, l)
-                 for g, e, l in zip(self.guides, extent, level))
-
-        # Nest via reduce function
-        def reducer(f1, f2):
-            return lambda: ((i,) + (j,)
-                            for j in f2() for i in f1())
-
-        return (GridLocus(loci=loci)
-                for loci in reduce(reducer, funcs)())
-
-    def _get_parent(self, locus, i=0, levels=1):
-        """
-        Return a location.
-
-        locus: location for which to return the parent
-        levels: Amount of level to traverse
-        i: is the index to the guides.
-        """
-        level = locus.parts[i].level + levels
-        extent = self.get_extent(locus)[i]
-        insert = self.guides[i].get_loci(
-            extent=extent, level=level,
-        )().next(),
-
-        return GridLocus(
-            loci=locus.loci[:i] + insert + locus.loci[i + 1:],
+    def datasets(self, dataset):
+        transformation = osr.CoordinateTransformation(
+            projections.get_spatial_reference(28992), 
+            projections.get_spatial_reference(4326),
         )
+        polygon = dataset2polygon(dataset)
+        polygon.transform(transform)
 
-    def _get_children(self, locus, i=0):
+    def __getitem__(self, indices):
+        """ Return a generator of datasets for times.
+            They come in the blocks defined by data."""
+    
+    def warpinto(self, dataset, times):
+        """ """
+        pass
+
+class Grid(object):
+    """
+    How tiles correspond to extents and sizes.
+    """
+    def __init__(self, size, base=2, factor=1, offset=(0, 0)):
+        self.size = size 
+        self.base = base
+        self.factor = factor
+        self.offset = offset
+
+    def get_extent(self, location):
         """
-        Return a locus generator. 
-
-        i is the index to the guides.
         """
-        level = locus.loci[i].level - 1
-        extent = self.get_extent()[i]
-        inserts = self.guide[i]._get_loci(extent=extent, level=level)()
-        for insert in inserts:
-            loci = (locus.loci[:i] + (insert,) + locus.loci[i + 1:])
-            yield GridLocus(loci=loci)
+        pixelside = self.factor * self.base ** location.level
 
-    def _get_root(self, func):
-        """
-        Return the root chunk. It only works if the data is fully
-        aggregated in all dimensions to a single chunk at the highest
-        level.
+        return tuple(pixelside * self.size[i]
+                     * (location.indices[i] + j) + self.offset[i]
+                     for j in (0, 1) for i in (0, 1))
 
-        Func must be a function that returns true when there is data at
-        location, and false otherwise.
-        """
-        self[self.DATA]  # Crash if we don't even have data ourselves.
-        # Get parents in all dimensions until nodata.
-        root = self
-        for i in range(len(self.store.structure.dimensions)):
-            begin = 0
-            end = 1
-            # First begin extending end until non-existing chunk found.
-            while True:
-                try:
-                    root.get_parent(dimension=i, levels=end)[self.DATA]
-                except KeyError:
-                    break
-                end = end * 2
-            while end - begin != 1:
-                # Now begin testing the middle of end until
-                # end - begin == 1 again.
-                middle = (begin + end) // 2
-                try:
-                    root.get_parent(dimension=i, levels=middle)[self.DATA]
-                except KeyError:
-                    end = middle
-                    continue
-                begin = middle
-            if begin:
-                root = root.get_parent(dimension=i, levels=begin)
-        return root
+    def get_polygon(self, location):
+        """ Return a polygon represnting the extent of the location. """
+        return extent2polygon(*self.get_extent(location))
 
-    # =========================================================================
-    # Data handling
-    # -------------------------------------------------------------------------
+    def get_location(self, polygon):
+        """ Return lowest-level location in which polygon fits entirely. """
+        # Pick a location at level 0 that intersects with the polygon
 
-    def _read_locus(self, string):
-        """ Load location from string. """
-        v = iter(np.fromstring(string[self.location], dtype=np.int64))
-        return Location(
-            parts=tuple(GuideLocus(level=v.next(),
-                                   indices=tuple(v.next() for size in domain))
-                        for domain in self.config.domains),
-        )
+        print('yeah?')
+        # prepare for fast intersections using a rectangle.
+        xmin, xmax, ymin, ymax = polygon.GetEnvelope()
+        rect = extent2polygon(xmin, ymin, xmax, ymax)  # faster intersections
 
-    def _read_axes(self, string):
-        """ Get the domains in the data. """
-        return np.fromstring(string[self.axes])
+        import ipdb; ipdb.set_trace() 
 
-    def _read_data(self, string):
-        """ Get the array in the data. """
-        data = np.frombuffer(string[self.data], dtype=self.dtype)
-        data.shape = self.config.shape
-        data.flags.writeable = True  # This may be a bug.
-        return data
+        
+        
+        # Go smartly levels up until a location that contains the polygon
 
-    def _read_dataset(self, string):
-        """ Create a dataset from a string. """
-        if string == string[self.location]:
-            raise ValueError('No data found beyond location')
-        location = self.get_location(string)
-        dataset_kwargs = dict(
-            location=location,
-            config=self.config.get_dataset_config_for_location(location),
-            axes=self.get_axes(string),
-            data=self.get_data(string),
-        )
-        return datasets.SerializableDataset(**dataset_kwargs)
 
-    def _create_axes(self):
-        """
-        Return empty axes for self.
-        """
-        return tuple(g.create_axes() for g in self.guides)
 
-    def _create_dataset(self, locus):
-        """ 
-        Return empty dataset for location.
-        """
-        extent = self._get_extent(locus)
-        kwargs = dict(
-            domains=[g.get_domain(size=s, extent=e)
-                     for g, s, e in zip(self.guides, self.size, extent)],
-            fill=self.fill,
-            axes=self._create_axes(),
-            data = np.ones(self.shape, self.dtype) * self.fill
-        )
-        return datasets.SerializableDataset(locus, **kwargs)
+        
 
-    def __getitem__(self, location):
-        """ Return dataset or location. """
-        try:
-            string = self.databox[location.key]
-            return self._read_dataset(string)
-        except ValueError:
-            return location  # Or would the empty string suffice?
-        except KeyError:
-            return self._create_dataset(location)
+    def get_geotransform(location):
+        """ Return the geotransform for use with gdal dataset. """
 
-    def __setitem__(self, location, dataset):
-        """ Write dataset to location. """
-        self.databox[location.key] = dataset.tostring()
+    def iter_children(location):
+        """ Return location iterator. """
 
-    def __delitem__(self, location):
-        """ Remove data at location. """
-        del self.databox[location.key]
 
-    def add_from(self, adapter):
-        """
-        Put data in the store from an iterable of datasets.
+class Data(object):
+    
+    def __init__(self, 
+                 schema, 
+                 dtype=np.float32, 
+                 chunks=(64, 64, 16),
+                 projection=4326,
+                 frame=None
+                 ):
+        """ Writes config, or reads it from storage. """
+        self.schema = schema
+        self.projection = projection
+        self.dtype = dtype
+        self.chunks = chunks
+        self.grid = Grid(size=chunks[:2])
 
-        Returns a generator of updated loci.
-        """
-        for source in adapter:
-            for locus in self._get_loci(source):
-                target = self[locus]
-                try:
-                    datasets.reproject(source, target)
-                    yield locus
-                except datasets.DoesNotFitError as error:
-                    dimension = error.dimension
-                    for sublocus in locus.get_children(dimension):
-                        target = grid.get_dataset(sublocus)
-                        reproject(source, target)  # should fit now
-                        grid.remove_dataset(locus) # data has moved
-                        yield sublocus
 
-    def fill_into(self, dataset):
-        """
-        Fill dataset with data from the store.
+class Time(object):
+    """ Just a large array! """
+    def __init__(self, schema, units=None, datatype=None, size=None):
+        """ Writes config, or reads it from storage. """
 
-        Returns a generator of updated locations.
-        """
-        for location in self.frame.config.get_locations(dataset.config):
-            #string = self.databox[location.key]
-            #t = self.get_dataset(location)
-            #datasets.reproject(t, dataset)
-            datasets.reproject(self.get_dataset(location), dataset)
+    def __setitem__(self, times, data):
+        pass
 
-    def get_adapter(self, dataset=None):
-        """
-        Return an adapter for this store.
-
-        If dataset is given, limit the extent of the returned data to
-        datasets extent.
-        """
-        raise NotImplementedError()
+    def __getitem__(self, times):
+        pass
