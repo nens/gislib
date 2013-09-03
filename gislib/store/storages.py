@@ -94,8 +94,8 @@ class SchemaFileStorage(BaseFileStorage):
         path = self.make_path(key=key)
         try:
             return super(SchemaFileStorage, self).delete(path=path)
-        except IOError:
-            raise KeyError('key')
+        except OSError:
+            raise KeyError(key)
 
     def first(self):
         """ Return named data of arbitrary chunk. """

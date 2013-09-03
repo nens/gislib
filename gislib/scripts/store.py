@@ -45,8 +45,13 @@ def fill(targetpath, sourcepaths):
     store = stores.Store(path=targetpath)
     store.create_data()
 
-    for sourcepath in sourcepaths:
-        store[0] = gdal.Open(sourcepath)
+    from arjan.monitor import Monitor; mon = Monitor() 
+    for i, sourcepath in enumerate(sourcepaths):
+        dataset = gdal.Open(sourcepath)
+        store[0] = dataset
+        mon.check('') 
+        if i == 1:
+            exit()
 
 def load(targetpath, sourcepaths):
     """ Do something spectacular. """
