@@ -361,15 +361,15 @@ class Container(object):
 
 class Data(object):
         
-    LOCATION = slice(16)
-    ORIGINAL = 16
-    ARRAY = slice(17, None)
+    LOCATION = slice(32)
+    ORIGINAL = 32
+    ARRAY = slice(33, None)
 
     def __init__(self,
                  schema,
                  dtype=np.float32,
-                 chunks=(512, 512, 1),
-                 projection=3857,
+                 chunks=(2000, 2500, 1),
+                 projection=28992,
                  frame=None
                  ):
         """ Writes config, or reads it from storage. """
@@ -378,11 +378,10 @@ class Data(object):
         self.projection = projection
         self.schema = schema
 
-
         if np.dtype(dtype).kind == 'f':
-            self.nodata = float(np.finfo(dtype).min)
+            self.nodata = np.finfo(dtype).min
         else:
-            self.nodata = int(np.iinfo(dtype).min)
+            self.nodata = np.iinfo(dtype).min
 
         self.grid = Grid(tilesize=chunks[:2])
 
@@ -392,7 +391,7 @@ class Data(object):
             projections.get_spatial_reference(dataset.GetProjection()),
             projections.get_spatial_reference(self.projection),
         )
-        
+
         # Use dataset circumference to determine top location
         outer = dataset2polygon(dataset)
         outer.Transform(transformation)
@@ -460,8 +459,7 @@ class Data(object):
                 array = self.get_array(data)
             except KeyError:
                 original = False
-                array = self.nodata * np.ones(self.chunks[::-1], self.dtype)
-                import ipdb; ipdb.set_trace() 
+                array = self.dtype(self.nodata) * np.ones(self.chunks[::-1], self.dtype)
         else:
             original = self.get_original(data)
             array = self.get_array(data)
@@ -471,8 +469,12 @@ class Data(object):
         dataset = array2dataset(array)
         dataset.SetProjection(projections.get_wkt(self.projection))
         dataset.SetGeoTransform(self.grid.get_geotransform(location))
+        if np.dtype(self.dtype).kind == 'f':
+            nodata = float(self.nodata)
+        else:
+            nodata = int(self.nodata)
         for i in range(dataset.RasterCount):
-            dataset.GetRasterBand(i + 1).SetNoDataValue(self.nodata)
+            dataset.GetRasterBand(i + 1).SetNoDataValue(nodata)
         
         return Container(array=array,
                          dataset=dataset,

@@ -53,3 +53,7 @@ def get_spatial_reference(projection):
 def get_wkt(projection):
     """ Convenience function. """
     return get_spatial_reference(projection).ExportToWkt()
+
+def get_proj4(projection):
+    """ Convenience function. """
+    return get_spatial_reference(projection).ExportToProj4()
