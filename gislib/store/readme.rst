@@ -1,10 +1,17 @@
-TODO:
-    aggregate up to the point where less then one pixel contains the data,
-    so when top is found, go up some amount based on base and tilesize.
+use indices when adding
+implement retrieving
+implement slicing instead of reprojection if transformation indicates roughly same.
 
-    quicker non-segfaulting way to get at memory datasets (look at writeraster)
-    for reading: Use the gdal_array method
+Bottlenecks:
+    - Reprojecting
+    - Storing!
 
-    rounding problem determining the top level when in same projection etc.
 
-    empty array generation somehow generates float64 data.
+    Time stuff: Create a numpy array the shape of the source. Warp dataset into it. Selectively save parts of the data to locations.
+
+- Determine location span
+- Initalize numpy array for the hole span
+- Load / create per location
+- Create a dataset from a view of this array, according to the indices
+- Reproject
+- Save per location

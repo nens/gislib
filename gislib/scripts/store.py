@@ -48,9 +48,9 @@ def fill(targetpath, sourcepaths):
     from arjan.monitor import Monitor; mon = Monitor() 
     for i, sourcepath in enumerate(sourcepaths):
         dataset = gdal.Open(sourcepath)
-        store[0] = dataset
+        store[4] = dataset
         mon.check('') 
-        if i == 1:
+        if i == 0:
             exit()
 
 def load(targetpath, sourcepaths):

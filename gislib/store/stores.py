@@ -60,6 +60,7 @@ logging.config.dictConfig({
 })
 
 logger = logging.getLogger(__name__)
+Report = collections.namedtuple('Report', ('outline', 'pixel', 'transform'))
 
 
 def array2dataset(array):
@@ -92,14 +93,6 @@ def array2dataset(array):
         bandoffset=bandoffset,
     )
     return gdal.Open(dataset_name, gdal.GA_Update)
-    
-    #driver = gdal.GetDriverByName(b'mem')
-    #dataset = driver.Create(b'', pixels, lines, bands, datatypecode)
-    #for i in range(bands):
-        #dataset.GetRasterBand(i + 1).WriteArray(array[i])
-    #return dataset
-    
-
 
 
 def array2polygon(array):
@@ -133,16 +126,6 @@ def points2polygon(points):
     polygon = ogr.Geometry(ogr.wkbPolygon)
     polygon.AddGeometry(ring)
     return polygon
-
-
-def extent2polygon(xmin, ymin, xmax, ymax):
-    """ Return an extent polygon. """
-    points = ((xmin, ymin),
-              (xmax, ymin),
-              (xmax, ymax),
-              (xmin, ymax),
-              (xmin, ymin))
-    return points2polygon(points)
 
 
 def dataset2polygon(dataset):
@@ -198,6 +181,33 @@ def pixel2polygon(dataset):
     return points2polygon(points)
 
 
+def extent2rectangle(xmin, ymin, xmax, ymax):
+    """ Return an extent polygon. """
+    points = ((xmin, ymin),
+              (xmax, ymin),
+              (xmax, ymax),
+              (xmin, ymax),
+              (xmin, ymin))
+    return points2polygon(points)
+
+
+def geometry2rectangle(geometry):
+    """ Return the rectangular polygon of geometry's envelope. """
+    xmin, xmax, ymin, ymax = geometry.GetEnvelope()
+    return extent2rectangle(xmin, ymin, xmax, ymax)
+
+
+def polygon2envelopepoints(polygon):
+    """ Return array. """
+    return np.array(polygon.GetEnvelope()).reshape(2, 2).transpose()
+
+
+def polygon2envelopesize(polygon):
+    """ Return size tuple. """
+    xmin, xmax, ymin, ymax = polygon.GetEnvelope()
+    return xmax - xmin, ymax - ymin
+
+
 class Location(object):
     def __init__(self, level, indices, time=0):
         """ x, y, and t refer to block indices. """
@@ -211,7 +221,6 @@ class Location(object):
         """ Return location. """
         time, level, x, y = np.fromstring(data, np.uint64)
         return cls(level=level, time=time, indices=(x, y))
-
 
     def tostring(self):
         """ Return string. """
@@ -230,25 +239,92 @@ class Location(object):
         return str(self)
 
 
-class Grid(object):
-    """
-    How tiles correspond to extents and sizes.
-    """
-    def __init__(self, tilesize, base=2, factor=1, offset=(0, 0)):
+class Blocker(object):
+    """ Methods common to Data and Time classes. """
+    @property
+    def timesize(self):
+        return self.chunks[2]
+
+    def itertimes(self, indices):
+        """ Return generator of time block positions. """
+        if isinstance(indices, slice):
+            start = indices.start // self.timesize
+            stop = (indices.stop - 1) // self.timesize + 1
+            for i in xrange(start, stop):
+                yield i
+        else:
+            yield indices // self.timesize
+
+    def get_timeslice(self, indices, time):
+        """ Return inter time block slice. """
+        offset = time * self.timesize
+        if isinstance(indices, slice):
+            start = max(0, indices.start - offset)
+            stop = min(self.timesize, indices.stop - offset)
+            return slice(start, stop)
+        else:
+            return slice(indices - offset, indices - offset + 1)
+
+
+class Container(object):
+    """ Container for tiledata. """
+    def __init__(self, array, dataset, original, location):
+        self.array = array
+        self.dataset = dataset
+        self.location = location
+        self.original = original
+
+    def tostring(self):
+            buf = io.BytesIO()
+            buf.write(self.location.tostring())
+            buf.write(np.uint8(self.original).tostring())
+            buf.write(self.array.tostring())
+            buf.seek(0)
+            return buf.read()
+
+
+class Data(Blocker):
+
+    LOCATION = slice(32)
+    ORIGINAL = 32
+    ARRAY = slice(33, None)
+
+    def __init__(self,
+                 schema,
+                 dtype=np.float32,
+                 chunks=(256, 256, 1),
+                 projection=28992,
+                 base=2,
+                 factor=1,
+                 offset=(0, 0)):
+        """ How to config? """
         self.base = base
+        self.chunks = chunks
+        self.dtype = dtype
         self.factor = factor
         self.offset = offset
-        self.tilesize = tilesize
+        self.projection = projection
+        self.schema = schema
 
-    def get_level(self, polygon):
-        """
-        Get the minimum level for a pixel.
+        if np.dtype(dtype).kind == 'f':
+            self.nodata = np.finfo(dtype).min
+        else:
+            self.nodata = np.iinfo(dtype).min
 
-        Slightly overestimate pixelsize to prevent a level too low for
-        native projections.
+    @property
+    def tilesize(self):
+        return self.chunks[:2]
+
+    # =========================================================================
+    # Location navigation
+    # -------------------------------------------------------------------------
+
+    def get_level(self, pixel):
         """
-        pixelsize = math.sqrt(polygon.Area()) * 1.01
-        return int(math.floor(math.log(pixelsize / self.factor, self.base)))
+        Get the minimum level for a pixel polygon.
+        """
+        size = polygon2envelopesize(pixel)
+        return int(math.floor(math.log(min(size) / self.factor, self.base)))
 
     def get_pixelsize(self, level):
         """ Return the size of a pixel at level. """
@@ -271,40 +347,35 @@ class Grid(object):
 
     def get_polygon(self, location):
         """ Return a polygon represnting the extent of the location. """
-        return extent2polygon(*self.get_extent(location))
+        return extent2rectangle(*self.get_extent(location))
 
-    def get_top(self, polygon):
-        """ Return lowest-level location in which polygon fits entirely. """
-        xmin, xmax, ymin, ymax = polygon.GetEnvelope()
-
+    def get_toplocation(self, bbox):
+        """ Return first location entirely containing polygon. """
         # Determine minimum level to start at
-        rect_size = xmax - xmin, ymax - ymin
-        base_size = tuple(self.factor * s for s in self.tilesize)
-        select = lambda l: int(math.ceil(max(l)))
-        level = select(tuple(math.log(r / b, self.base)
-                             for r, b in zip(rect_size, base_size)))
+        length = max(polygon2envelopesize(bbox))
+        level = int(math.ceil(math.log(length / self.factor, self.base)))
 
         # Find an intersecting tile at this level
+        point = bbox.Centroid().GetPoint(0)
         pixelsize = self.get_pixelsize(level)
-        tilesize_offset_coordinates = self.tilesize, self.offset, (xmin, ymin)
+        tilesize_offset_point = self.tilesize, self.offset, point
         indices = tuple(int(math.floor((c - o) / (t * pixelsize)))
-                        for t, o, c in zip(*tilesize_offset_coordinates))
+                        for t, o, c in zip(*tilesize_offset_point))
 
         # Level up until location polygon contains dataset polygon
         location = Location(level=level, indices=indices)
-        rect_geom = extent2polygon(xmin, ymin, xmax, ymax)
-        while not self.get_polygon(location).Contains(rect_geom):
+        while not self.get_polygon(location).Contains(bbox):
             location = self.iterlocations(location=location,
                                           level=location.level + 1).next()
         return location
-    
+
     def iterlocations(self, level, extent=None, location=None, time=None):
         """ Return location iterator. """
         if extent is None:
             xmin, ymin, xmax, ymax = self.get_extent(location)
         else:
             xmin, ymin, xmax, ymax = extent
-        
+
         # new level pixel- and tilesizes
         pixelsize = self.get_pixelsize(level)
         tilesize = tuple(s * pixelsize for s in self.tilesize)
@@ -325,7 +396,7 @@ class Grid(object):
                                indices=(index_x, index_y))
 
     def walk(self, location, polygon, level):
-            """ 
+            """
             Return generator of sublocations that intersect with polygon,
             stopping at level.
             """
@@ -342,101 +413,9 @@ class Grid(object):
                         yield walklocation
             yield location
 
-class Container(object):
-    """ Container for tiledata. """
-    def __init__(self, array, dataset, original, location):
-        self.array = array
-        self.dataset = dataset
-        self.location = location
-        self.original = original
-    
-    def tostring(self):
-            buf = io.BytesIO()
-            buf.write(self.location.tostring())
-            buf.write(np.uint8(self.original).tostring())
-            buf.write(self.array.tostring())
-            buf.seek(0)
-            return buf.read()
-    
-
-class Data(object):
-        
-    LOCATION = slice(32)
-    ORIGINAL = 32
-    ARRAY = slice(33, None)
-
-    def __init__(self,
-                 schema,
-                 dtype=np.float32,
-                 chunks=(2000, 2500, 1),
-                 projection=28992,
-                 frame=None
-                 ):
-        """ Writes config, or reads it from storage. """
-        self.chunks = chunks
-        self.dtype = dtype
-        self.projection = projection
-        self.schema = schema
-
-        if np.dtype(dtype).kind == 'f':
-            self.nodata = np.finfo(dtype).min
-        else:
-            self.nodata = np.iinfo(dtype).min
-
-        self.grid = Grid(tilesize=chunks[:2])
-
-    def __setitem__(self, indices, dataset):
-        """ Add data. """
-        transformation = osr.CoordinateTransformation(
-            projections.get_spatial_reference(dataset.GetProjection()),
-            projections.get_spatial_reference(self.projection),
-        )
-
-        # Use dataset circumference to determine top location
-        outer = dataset2polygon(dataset)
-        outer.Transform(transformation)
-        top = self.grid.get_top(outer)
-
-        # Use pixel circumference to determine lowest level
-        inner = pixel2polygon(dataset)
-        inner.Transform(transformation)
-        level = self.grid.get_level(inner)
-        
-        # Use outer envelope to walk the tiles
-        xmin, xmax, ymin, ymax = outer.GetEnvelope()
-        envelope = extent2polygon(xmin, ymin, xmax, ymax)
-        locations = self.grid.walk(level=level,
-                                   location=top,
-                                   polygon=envelope)
-
-        cache = collections.defaultdict(list)
-        last_level = level
-
-        for location in locations:
-            # Get the tile
-            container = self.get_container(location=location)
-            target = container.dataset
-
-            # To aggregate or not
-            if location.level == last_level + 1:
-                sources = [s.dataset for s in cache[last_level]]
-                container.original = False
-            else:
-                sources = [dataset]
-                container.original = True
-
-            for source in sources:
-                rasters.reproject(source, target, gdal.GRA_NearestNeighbour)
-                target.FlushCache()
-            print(len(sources), 'o' if container.original else 'a', location)
-            if not container.original:
-                del cache[last_level]
-            
-            cache[location.level].append(container)
-            
-            self.put_container(container)
-            last_level = location.level
-
+    # =========================================================================
+    # Storage
+    # -------------------------------------------------------------------------
 
     def get_array(self, data):
         """ Return array from data """
@@ -459,7 +438,8 @@ class Data(object):
                 array = self.get_array(data)
             except KeyError:
                 original = False
-                array = self.dtype(self.nodata) * np.ones(self.chunks[::-1], self.dtype)
+                array = (self.dtype(self.nodata) *
+                         np.ones(self.chunks[::-1], self.dtype))
         else:
             original = self.get_original(data)
             array = self.get_array(data)
@@ -468,14 +448,14 @@ class Data(object):
         # Dataset
         dataset = array2dataset(array)
         dataset.SetProjection(projections.get_wkt(self.projection))
-        dataset.SetGeoTransform(self.grid.get_geotransform(location))
+        dataset.SetGeoTransform(self.get_geotransform(location))
         if np.dtype(self.dtype).kind == 'f':
             nodata = float(self.nodata)
         else:
             nodata = int(self.nodata)
         for i in range(dataset.RasterCount):
             dataset.GetRasterBand(i + 1).SetNoDataValue(nodata)
-        
+
         return Container(array=array,
                          dataset=dataset,
                          location=location,
@@ -491,7 +471,95 @@ class Data(object):
         else:
             self.schema[container.location.key] = container.tostring()
 
-class Time(object):
+    # =========================================================================
+    # Operations
+    # -------------------------------------------------------------------------
+
+    def investigate(self, dataset):
+        """
+        Return Report tuple.
+
+        To transform or not to transform, that is the question. If
+        the outcome is not to transform, original pixel and outline
+        coordinates are returned, transformed versions otherwise.
+        Transformation is considered unnecessary if the outline changes
+        less then 1 % of the pixelsize by transformation.
+
+        The outline is shrunk by 1% of the shortest pixelside, to prevent
+        touching tiles to be retrieved.
+        """
+        transformation = osr.CoordinateTransformation(
+            projections.get_spatial_reference(dataset.GetProjection()),
+            projections.get_spatial_reference(self.projection),
+        )
+
+        # outline
+        outline_org = dataset2polygon(dataset)
+        outline_trf = outline_org.Clone()
+        outline_trf.Transform(transformation)
+
+        # pixel
+        pixel_org = pixel2polygon(dataset)
+        pixel_trf = pixel_org.Clone()
+        pixel_trf.Transform(transformation)
+
+        # verdict
+        pixel_trf_size = polygon2envelopesize(pixel_trf)
+        diff = (polygon2envelopepoints(outline_trf) -
+                polygon2envelopepoints(outline_org))
+        transform = (100 * diff > pixel_trf_size).any()
+        if transform:
+            pixel = pixel_trf
+            outline = outline_trf.Buffer(-0.01 * min(pixel_trf_size))
+        else:
+            pixel = pixel_org
+            outline = outline_org.Buffer(-0.01 * min(pixel_trf_size))
+        return Report(pixel=pixel, outline=outline, transform=transform)
+
+    def __setitem__(self, indices, dataset):
+        """ Add data. """
+        for t in list(self.itertimes(indices)):
+            print(t, self.get_timeslice(indices=indices, time=t))
+        report = self.investigate(dataset)
+        lowest_level = self.get_level(report.pixel)
+        bbox = geometry2rectangle(report.outline)
+        toplocation = self.get_toplocation(bbox)
+
+        # Use outer envelope to walk the tiles
+        locations = self.walk(polygon=bbox,
+                              level=lowest_level,
+                              location=toplocation)
+
+        cache = collections.defaultdict(list)
+        previous_level = lowest_level
+        for location in locations:
+            # Get the tile
+            container = self.get_container(location=location)
+            target = container.dataset
+
+            # To aggregate or not
+            if location.level == previous_level + 1:
+                sources = [s.dataset for s in cache[previous_level]]
+                container.original = False
+            else:
+                sources = [dataset]
+                container.original = True
+
+            for source in sources:
+                rasters.reproject(source, target, gdal.GRA_NearestNeighbour)
+                target.FlushCache()
+            target = container.dataset
+            print(len(sources), 'O' if container.original else 'A', location)
+            if not container.original:
+                del cache[previous_level]
+
+            cache[location.level].append(container)
+
+            self.put_container(container)
+            previous_level = location.level
+
+
+class Time(Blocker):
     """ Just a large array! """
     def __init__(self, schema, units=None, datatype=None, size=None):
         """ Writes config, or reads it from storage. """

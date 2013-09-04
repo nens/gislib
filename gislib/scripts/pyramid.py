@@ -34,12 +34,9 @@ def get_parser():
 def pyramid(targetpath, sourcepaths):
     """ Do something spectacular. """
     from arjan.monitor import Monitor; mon = Monitor()
-    #source = gdal.Open(sourcepaths[0])
-    #pyramid = raster.Pyramid(targetpath)
-    #pyramid.add(source)
-    pyramid = pyramids.Pyramid(targetpath)
-    pyramid.add(sourcepaths)
-
+    source = gdal.Open(sourcepaths[0])
+    pyramid = rasters.Pyramid(targetpath)
+    pyramid.add(source)
     mon.check('Pyramid2') 
 
 
