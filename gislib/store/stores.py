@@ -29,36 +29,6 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 osr.UseExceptions()
 
-logging.config.dictConfig({
-    'disable_existing_loggers': True,
-    'version': 1,
-    'formatters': {
-        'verbose': {
-            'format': '%(levelname)s %(asctime)s %(module)s %(message)s'
-        },
-        'simple': {
-            'format': '%(levelname)s %(message)s'
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'level': 'DEBUG',
-            'formatter': 'simple',
-        },
-    },
-    'loggers': {
-        'root': {
-            'level': 'DEBUG',
-            'handlers': ['console'],
-        },
-        '': {
-            'level': 'DEBUG',
-            'handlers': ['console'],
-        },
-    }
-})
-
 logger = logging.getLogger(__name__)
 Report = collections.namedtuple('Report', ('outline', 'pixel', 'transform'))
 
@@ -239,7 +209,7 @@ class Location(object):
         return str(self)
 
 
-class Blocker(object):
+class Slicer(object):
     """ Methods common to Data and Time classes. """
     @property
     def timesize(self):
@@ -283,7 +253,7 @@ class Container(object):
             return buf.read()
 
 
-class Data(Blocker):
+class Raster(Slicer):
 
     LOCATION = slice(32)
     ORIGINAL = 32
@@ -293,7 +263,7 @@ class Data(Blocker):
                  schema,
                  dtype=np.float32,
                  chunks=(256, 256, 1),
-                 projection=28992,
+                 projection=3857,
                  base=2,
                  factor=1,
                  offset=(0, 0)):
@@ -518,8 +488,6 @@ class Data(Blocker):
 
     def __setitem__(self, indices, dataset):
         """ Add data. """
-        for t in list(self.itertimes(indices)):
-            print(t, self.get_timeslice(indices=indices, time=t))
         report = self.investigate(dataset)
         lowest_level = self.get_level(report.pixel)
         bbox = geometry2rectangle(report.outline)
@@ -549,7 +517,9 @@ class Data(Blocker):
                 rasters.reproject(source, target, gdal.GRA_NearestNeighbour)
                 target.FlushCache()
             target = container.dataset
-            print(len(sources), 'O' if container.original else 'A', location)
+            logger.debug('{} {} {}'.format(
+                len(sources), 'O' if container.original else 'A', location,
+            ))
             if not container.original:
                 del cache[previous_level]
 
@@ -558,8 +528,12 @@ class Data(Blocker):
             self.put_container(container)
             previous_level = location.level
 
+    def warpinto(self, dataset, times):
+        """ """
+        pass
 
-class Time(Blocker):
+
+class Time(Slicer):
     """ Just a large array! """
     def __init__(self, schema, units=None, datatype=None, size=None):
         """ Writes config, or reads it from storage. """
@@ -573,7 +547,7 @@ class Time(Blocker):
 
 class Store(object):
     # Schema names
-    DATA = 'data'
+    RASTER = 'data'
     CONF = 'conf'
 
     def __init__(self, path):
@@ -582,23 +556,11 @@ class Store(object):
         self.conf = self.storage.get_schema(self.CONF, split=False)
 
         try:
-            self.data = pickle.loads(self.conf[self.DATA])
+            self.raster = pickle.loads(self.conf[self.RASTER])
         except KeyError:
             pass
 
-    def create_data(self, **kwargs):
-        schema = self.storage.get_schema(self.DATA, split=True)
-        self.data = Data(schema=schema, **kwargs)
-        self.conf[self.DATA] = pickle.dumps(self.data)
-
-    def __setitem__(self, indices, dataset):
-        """ Previously the pyramids add method """
-        self.data[indices] = dataset
-
-    def __getitem__(self, indices):
-        """ Return a generator of datasets for times.
-            They come in the blocks defined by data."""
-
-    def warpinto(self, dataset, times):
-        """ """
-        pass
+    def init_raster(self, **kwargs):
+        schema = self.storage.get_schema(self.RASTER, split=True)
+        self.raster = Raster(schema=schema, **kwargs)
+        self.conf[self.RASTER] = pickle.dumps(self.raster)

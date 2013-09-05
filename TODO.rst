@@ -1,27 +1,29 @@
 Todo
 ====
-Ahn experiments:
-On the nens-3di-task-01:
-    Rename layers
-    Rename folders
-    Rename symlinks
-    Remove old pyramids
-    Remove old layers
-    Add filtered DEM2
+Raster:
+- rename data objects to raster objects for clarity
+- make warpinto method accepting a dataset and filling it with store data
+- make the time indices actually work:
+    when adding: init an array that contains dataset and integer amount
+       of chunks as a dataset. reproject and then write the blocks one
+       by one.
+    when reading: init an array, fill from chunks one by one and then
+       create a dataset from it, reproject.
 
-Invesigate all artefacts on interpolated DEM2
+- bypass reproject if it is unnecessary - very fast reading of tiled layers
 
-Put in this library a collection of tools, namely:
-    - From the nens-3di-task-01:
-        - All juggle related scripts on the nens-3di-task-01
-        - Damagedownload script
-        - Style generation code
+Time:
+- add init_time(self, units, datatype) method similar to 
+- make __setitem__ and __getitem__ work for time.
 
-Pyramid improvements:
-    - commandline interface
-    - multithreading
-    - extending via mem datasets instead of 4 separate writes
-    - extending to below bottom level
-    - metadata journaling
-
-Commandline interface to ahn collections with metadata journaling.
+Interface:
+    store.raster[indices] = dataset  # dataset bandcount must correspond to indices
+    store.raster[indices] returns generator of original datablocks.
+    store.raster.projection  # epsg, proj4, wkt?
+    store.time[indices] = array
+    store.time[indices] returns an array
+    store.time.units  # coards?
+    store.raster.guess_extent()  # maybe add amount of tries?
+    store.raster.read_extent()  # intensive, reads all blocks
+    store.raster.warpinto(dataset)
+implement slicing instead of reprojection if transformation indicates roughly same.

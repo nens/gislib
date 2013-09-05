@@ -9,6 +9,7 @@ from __future__ import division
 import argparse
 import logging
 import shutil
+import sys
 
 from osgeo import gdal
 
@@ -19,7 +20,7 @@ description = """
 Commandline tool for working with nens/gislib stores.
 """
 
-logging.root.level = logging.DEBUG
+logging.basicConfig(stream=sys.stderr , level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -43,13 +44,11 @@ def fill(targetpath, sourcepaths):
         pass
     
     store = stores.Store(path=targetpath)
-    store.create_data()
+    store.init_raster()
 
-    from arjan.monitor import Monitor; mon = Monitor() 
     for i, sourcepath in enumerate(sourcepaths):
         dataset = gdal.Open(sourcepath)
-        store[4] = dataset
-        mon.check('') 
+        store.raster[0] = dataset
         if i == 0:
             exit()
 
