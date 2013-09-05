@@ -14,52 +14,11 @@ from osgeo import gdal
 from osgeo import osr
 import numpy as np
 
+from gislib import projections
+
 
 # Enable gdal exceptions
 gdal.UseExceptions()
-
-
-# Projections and transformations
-GOOGLE = 3857  # And not 900913!!! Gdal does not understand it.
-RD = ("+proj=sterea +lat_0=52.15616055555555 +lon_0=5.38763888888889 "
-      "+k=0.999908 +x_0=155000 +y_0=463000 +ellps=bessel "
-      "+towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812 "
-      "+units=m +no_defs")  # Copied from lizard_map/coordinates.py
-
-
-# Can and should override this from importing application.
-default_projection = RD
-
-
-def get_spatial_reference(projection):
-    """
-    Return a SpatialReference object.
-
-    projection can be:
-        None or empty string: returns default_projection.
-        integer epsg code
-        epsg:integer string
-        proj4 string
-        wkt string
-    """
-    sr = osr.SpatialReference()
-    if projection is None or projection == '':
-        return get_spatial_reference(default_projection)
-    elif isinstance(projection, int):
-        sr.ImportFromEPSG(projection)
-    elif isinstance(projection, (str, unicode)):
-        if projection.startswith('+proj='):
-            sr.ImportFromProj4(str(projection))
-        elif projection.lower().startswith('epsg:'):
-            sr.ImportFromEPSG(int(projection.split(':')[1]))
-        else:
-            sr.ImportFromWkt(str(projection))
-    return sr
-
-
-def get_wkt(projection):
-    """ Convenience function. """
-    return get_spatial_reference(projection).ExportToWkt()
 
 
 def get_transformed_extent(extent, source_projection, target_projection):
@@ -77,8 +36,8 @@ def get_transformed_extent(extent, source_projection, target_projection):
                                                    [0, 3]])]
         # Transform according to projections
         x_target, y_target = np.array(osr.CoordinateTransformation(
-            get_spatial_reference(source_projection),
-            get_spatial_reference(target_projection),
+            projections.get_spatial_reference(source_projection),
+            projections.get_spatial_reference(target_projection),
         ).TransformPoints(points_source))[:, 0:2].T
 
         # Return as extent
@@ -100,8 +59,8 @@ def reproject(source, target, algorithm):
     """ Reproject source to target. """
     gdal.ReprojectImage(
         source, target,
-        get_wkt(source.GetProjection()),
-        get_wkt(target.GetProjection()),
+        projections.get_wkt(source.GetProjection()),
+        projections.get_wkt(target.GetProjection()),
         algorithm,
         0.0,
         0.125,
@@ -178,7 +137,7 @@ class DatasetGeometry(Geometry):
         dataset = driver.Create(b'',
                                 self.size[0], self.size[1], bands, datatype)
         dataset.SetGeoTransform(self.geotransform())
-        dataset.SetProjection(get_wkt(projection))
+        dataset.SetProjection(projections.get_wkt(projection))
         return dataset
 
     def transformed_cellsize(self, source_projection, target_projection):
@@ -247,7 +206,7 @@ class Pyramid(AbstractGeoContainer):
                          'projection',
                          'tilesize']
 
-    def __init__(self, path, projection=GOOGLE,
+    def __init__(self, path, projection=projections.GOOGLE,
                  algorithm=0, compression='NONE',
                  tilesize=(1024, 1024), cellsize=None):
         """
@@ -367,7 +326,7 @@ class Pyramid(AbstractGeoContainer):
         # Actual create
         dataset = driver.Create(*create_args)
         dataset.SetProjection(
-            get_spatial_reference(self.projection).ExportToWkt(),
+            projections.get_spatial_reference(self.projection).ExportToWkt(),
         )
         dataset.SetGeoTransform(
             self._geometry(level=level, tile=tile).geotransform(),
@@ -591,7 +550,7 @@ class Monolith(AbstractGeoContainer):
 
         # Apply default projection if there is none.
         tif_dataset.SetProjection(
-            get_wkt(dataset.GetProjection()),
+            projections.get_wkt(dataset.GetProjection()),
         )
 
         # Close and reopen dataset to force flush.
@@ -641,70 +600,3 @@ class Container(object):
         reproject(source=self.dataset,
                   target=dataset,
                   algorithm=self.algorithm)
-
-
-def _reproject_from_paths(tilepath, sourcepaths, **kwargs):
-    """
-    Reproject the datasets at sourcepaths into the dataset at tilepath.
-
-    Kwargs will contain the algorithm. Uses reproject function from this module
-
-    THis van
-    """
-    pass
-
-
-def _create_tile(targetpath, templatepath, geotransform):
-    """
-    Create an empty tile at path, with the properties of the tile at
-    templatepath and the indicated geotransform
-    """
-    pass
-
-
-class Pyramid2(AbstractGeoContainer):
-    """
-    New style pyramid object. The warpinto method behaves the same
-    as the old pyramid object.  However, the add method now accepts
-    a list of paths to be used wih gdal.Open, so /vsizip/, /vsicurl/,
-    are allowed as well.
-
-    features:
-        - Multiprocessing is used for add operations, therefore
-        - Much faster adding of both single and multiple file datasets
-        - Configuration is not stored as json, but taken from toplevel tile
-        - Changes are recorded in metadata, via commit-style messages
-        - Arbitrary amount of zoomlevels
-    """
-    def __init__(self, path):
-        """
-        If path exists, configure from toplevel tile in pyramid if path exists
-
-        """
-        pass
-
-    def _get_tiledict(self, sourcepaths):
-        """
-        Return a dictionary of tilepath: sourcepaths.
-
-        This dictionary can than be mapped to a multiprocessing pool to
-        update the tiles.
-        """
-        pass
-
-    def _get_tile_path(tile):
-        """ Convert a tile namedtuple to a path using self.path. """
-        pass
-
-    def add(sourcepaths):
-        """
-        Determine which sources affect which tiles
-        Project sources into tiles
-        Update all tiles above the affected tiles
-        """
-        pass
-
-    def warpinto(self):
-        """
-        """
-        pass

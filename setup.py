@@ -9,6 +9,7 @@ long_description = '\n\n'.join([
     ])
 
 install_requires = [
+    'lz4',
     'matplotlib',
     'Pillow',
     'scipy',
@@ -39,5 +40,7 @@ setup(name='gislib',
       extras_require={'test': tests_require},
       entry_points={
           'console_scripts': [
+              'pyramid = gislib.scripts.pyramid:main',
+              'store = gislib.scripts.store:main',
           ]},
       )
