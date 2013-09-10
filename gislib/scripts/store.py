@@ -14,13 +14,12 @@ import sys
 from osgeo import gdal
 
 from gislib.store import stores
-from gislib.store import storages
 
 description = """
 Commandline tool for working with nens/gislib stores.
 """
 
-logging.basicConfig(stream=sys.stderr , level=logging.DEBUG)
+logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -36,28 +35,38 @@ def get_parser():
     return parser
 
 
-def fill(targetpath, sourcepaths):
-    """ Do something spectacular. """
+def clean(targetpath, sourcepaths):
+    """ Clean up. """
     try:
         shutil.rmtree(targetpath)
     except OSError:
         pass
-    
-    store = stores.Store(path=targetpath)
-    store.init_raster()
 
+
+def fill(targetpath, sourcepaths):
+    """ Fill. """
+    store = stores.Pyramid(path=targetpath)
+    from arjan.monitor import Monitor; mon = Monitor()
     for i, sourcepath in enumerate(sourcepaths):
         dataset = gdal.Open(sourcepath)
-        store.raster[0] = dataset
-        if i == 0:
-            exit()
+        store.add(dataset)
+        mon.check(sourcepath)
+
 
 def load(targetpath, sourcepaths):
-    """ Do something spectacular. """
-
+    """ Load. """
+    store = stores.Pyramid(path=targetpath)
+    driver = gdal.GetDriverByName(b'mem')
+    for i, sourcepath in enumerate(sourcepaths):
+        original = gdal.Open(sourcepath)
+        dataset = driver.CreateCopy('', original)
+        band = dataset.GetRasterBand(1)
+        band.Fill(band.GetNoDataValue())
+        store.warpinto(dataset)
 
 
 def main():
     """ Call command with args from parser. """
+    #clean(**vars(get_parser().parse_args()))
     fill(**vars(get_parser().parse_args()))
     #load(**vars(get_parser().parse_args()))

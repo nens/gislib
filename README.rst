@@ -25,10 +25,6 @@ Create the pyramid using gdal::
 
 Working with the time-pyramid raster store
 ------------------------------------------
-Currently, the datastore allows for addition of data::
-
-    store = stores.Store(path_to_store)
-    store.create_data()
-    store[0] = path_to_rasterfile
-
-See the todo for stuff being worked on.
+store = stores.Pyramid(path_to_store)
+store.add(gdal.Open(path_to_rasterfile)
+store.warpinto(my_writable_gdal_dataset)
