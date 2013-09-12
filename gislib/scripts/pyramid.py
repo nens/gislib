@@ -47,6 +47,7 @@ def fill(targetpath, sourcepaths):
     """ Fill. """
     pyramid = pyramids.Pyramid(path=targetpath)
     for i, sourcepath in enumerate(sourcepaths):
+        logger.info(sourcepath)
         dataset = gdal.Open(sourcepath)
         pyramid.add(dataset,
                     projection=3857,
@@ -68,5 +69,5 @@ def load(targetpath, sourcepaths):
 def main():
     """ Call command with args from parser. """
     #clean(**vars(get_parser().parse_args()))
-    #fill(**vars(get_parser().parse_args()))
-    load(**vars(get_parser().parse_args()))
+    fill(**vars(get_parser().parse_args()))
+    #load(**vars(get_parser().parse_args()))

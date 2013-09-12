@@ -402,7 +402,6 @@ class Pyramid(object):
         """ 
         Return info dictionary or None if empty pyramid.
         """
-        logger.info('info accessed!')
         # See if any contents in the pyramid
         path = os.path.join(self.path, self.TILES)
         try:
@@ -604,7 +603,7 @@ class Pyramid(object):
             cache[tile.level].append(target)
             previous_level = tile.level
 
-        # Sync old and new toptiles
+        # sync old and new toptiles
         hi, lo = top_tile, info.get('top_tile', top_tile)
         if hi.level < lo.level:
             hi, lo = lo, hi  # swap
