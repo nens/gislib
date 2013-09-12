@@ -55,7 +55,7 @@ def get_extent_intersection(extent1, extent2):
             min(extent1[3], extent2[3]))
 
 
-def reproject(source, target, algorithm):
+def reproject(source, target, algorithm=gdal.GRA_NearestNeighbour):
     """ Reproject source to target. """
     gdal.ReprojectImage(
         source, target,

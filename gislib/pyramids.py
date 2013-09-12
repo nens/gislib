@@ -31,6 +31,9 @@ osr.UseExceptions()
 
 logger = logging.getLogger(__name__)
 
+BLOCKSIZE = 256, 256
+GTIFF = gdal.GetDriverByName(b'gtiff')
+
 
 def array2dataset(array):
     """ 
@@ -177,6 +180,10 @@ def geometry2envelopepoints(geometry):
     """ Return array. """
     return np.array(geometry.GetEnvelope()).reshape(2, 2).transpose()
 
+def geometry2envelopeextent(geometry):
+    """ Return extent. """
+    return tuple(geometry2envelopepoints(geometry).ravel())
+
 
 def geometry2envelopesize(geometry):
     """ Return size tuple. """
@@ -184,7 +191,7 @@ def geometry2envelopesize(geometry):
     return xmax - xmin, ymax - ymin
 
 
-def get_status(dataset):
+def get_info(dataset):
     """ Return dictionary. """
     band = dataset.GetRasterBand(1)
     return dict(datatype=band.DataType,
@@ -235,7 +242,7 @@ def get_bounds(dataset, projection):
         pixel = pixel_org
         raster = raster_org.Buffer(-0.01 * min(pixel_trf_size))
     
-    return dict(dataset=raster, pixel=pixel)
+    return dict(raster=raster, pixel=pixel)
 
 
 def get_level(pixel):
@@ -265,7 +272,29 @@ def get_tiles(tilesize, level, extent):
             yield Tile(size=tilesize, level=level, indices=(tile_x, tile_y))
 
 
-def get_top_tile(geometry, tilesize, blocksize=(256, 256)):
+def walk_tiles(tile, stop, geometry):
+    """
+    Return generator of tiles at lower levels that intersect
+    with geometry, stopping at level stop.
+    """
+    if not geometry.Intersects(tile.polygon):
+        return  # subtiles will not intersect either
+    if tile.level > stop:
+        # walk subtiles, too
+        subtiles = get_tiles(tilesize=tile.size, 
+                             level=tile.level - 1,
+                             extent=tile.extent)
+        for subtile in subtiles:
+            walktiles = walk_tiles(tile=subtile,
+                                   stop=stop,
+                                   geometry=geometry)
+            for walktile in walktiles:
+                yield walktile
+    # finally, yield this tile
+    yield tile
+
+
+def get_top_tile(geometry, tilesize, blocksize=BLOCKSIZE):
     """ 
     Get the first tile for which a block completely contains geometry.    
     """
@@ -308,7 +337,7 @@ class Tile(object):
 
     
     def __str__(self):
-        return '<Location: size {}, level {}, indices {}>'.format(
+        return '<Tile: size {}, level {}, indices {}>'.format(
             self.size, self.level, self.indices,
         )
 
@@ -328,8 +357,8 @@ class Tile(object):
     @property
     def geotransform(self):
         """ Return geotransform tuple. """
-        pixelsize = 2 ** address.level
-        xmin, ymin, xmax, ymax = self.get_extent(address)
+        pixelsize = 2 ** self.level
+        xmin, ymin, xmax, ymax = self.extent
         return xmin, pixelsize, 0, ymax, 0, -pixelsize
 
     @property
@@ -337,18 +366,15 @@ class Tile(object):
         """ Return extent geometry. """
         return extent2polygon(*self.extent)
 
-    
 
-
-
-class Pyramid():
+class Pyramid(object):
     """
     Pyramid datastore.
     """
 
     OPTIONS = [
-        'BLOCKXSIZE=256',
-        'BLOCKYSIZE=256',
+        'BLOCKXSIZE={}'.format(BLOCKSIZE[0]),
+        'BLOCKYSIZE={}'.format(BLOCKSIZE[1]),
         'COMPRESS=DEFLATE',
         'SPARSE_OK=TRUE',
         'TILED=TRUE',
@@ -364,31 +390,37 @@ class Pyramid():
         self.path = path
 
     @property
-    def status(self):
+    def info(self):
         """ 
-        Return status dictionary or None if empty pyramid.
+        Return info dictionary or None if empty pyramid.
         """
-        logger.info('status accessed!')
+        logger.info('info accessed!')
         # See if any contents in the pyramid
-        levels = glob.glob(os.path.join(self.path, '*'))
+        try:
+            levels = os.listdir(self.path)
+        except OSError:
+            return
         if not levels:
             return
         
         # Derive extreme levels and top tile properties from filesystem
         top_path = glob.glob(os.path.join(self.path, max(levels), '*', '*'))[0]
+
+        # Start with info from top tile dataset
+        info = get_info(gdal.Open(top_path))
+
+        # Update with info from folder structure
         min_level = int(min(levels))
         max_level, x, y = map(int, top_path[:-4].split(os.path.sep)[-3:])
-        top_tile = Tile(level=max_level, indices=(x,y))
+        top_tile = Tile(size=info['tilesize'], level=max_level, indices=(x,y))
 
-        status = dict(
+        info.update(
             max_level=max_level,
             min_level=min_level,
             top_tile=top_tile,
         )
         
-        # Update with dataset specific properties from top tile dataset
-        status.update(get_status(gdal.Open(top_path)))
-        return status
+        return info
     
     # =========================================================================
     # Locking
@@ -423,9 +455,67 @@ class Pyramid():
             os.removedirs(os.path.dirname(self.lockpath))
         except:
             pass
-    
+
     # =========================================================================
-    # Operations
+    # Datasets
+    # -------------------------------------------------------------------------
+    
+    def new_dataset(self, tile, info):
+        """ Return gdal dataset. """
+        path = os.path.join(self.path, tile.path)
+
+        try:
+            os.makedirs(os.path.dirname(path))
+        except OSError:
+            pass  # It existed.
+
+        dataset = GTIFF.Create(path, tile.size[0], tile.size[1],
+                               1, info['datatype'], self.OPTIONS)
+
+        dataset.SetProjection(projections.get_wkt(info['projection']))
+        dataset.SetGeoTransform(tile.geotransform)
+        dataset.GetRasterBand(1).SetNoDataValue(info['nodatavalue'])
+        
+        return dataset
+        
+    def get_dataset(self, tile, info=None):
+        """
+        Return a gdal dataset corresponding to a tile.
+
+        Adding an info dictionary implies write mode.
+        
+        If the dataset does not exist, in read mode a RuntimeError is
+        raised; in write mode a new dataset is created.
+        """
+        path = os.path.join(self.path, tile.path)
+        
+        if info is None:
+            return gdal.Open(path)
+
+        try:
+            dataset =  gdal.Open(path, gdal.GA_Update)
+            logger.debug('Update {}'.format(path))
+        except RuntimeError:
+            dataset =  self.new_dataset(tile=tile, info=info)
+            logger.debug('Create {}'.format(path))
+        return dataset
+
+    def get_datasets(self, tiles, info=None):
+        """ 
+        Return dataset generator. 
+
+        Silently skips
+        
+        """
+        for tile in tiles:
+            try:
+                yield self.get_dataset(tile=tile, info=info)
+            except RuntimeError:
+                continue
+    
+
+    # =========================================================================
+    # Interface
     # -------------------------------------------------------------------------
 
     def add(self, dataset=None, **kwargs):
@@ -442,234 +532,61 @@ class Pyramid():
             # unlock and return
             return self.unlock()
 
-        # use pyramid status if possible, otherwise use dataset and kwargs
-        status = self.status
-        if status is None:
-            status = get_status(dataset)
-            status.update(kwargs)
+        # use pyramid info if possible, otherwise use dataset and kwargs
+        info = self.info
+        if info is None:
+            info = get_info(dataset)
+            info.update(kwargs)
         
 
         # get bounds in pyramids projection
-        bounds = get_bounds(dataset=dataset, projection=status['projection'])
+        bounds = get_bounds(dataset=dataset, projection=info['projection'])
 
-        # check baselevel
+        # derive baselevel
         min_level = get_level(bounds['pixel'])
-        if min_level != status.get('min_level', min_level):
+        if min_level != info.get('min_level', min_level):
             raise LevelError('Incompatible resolution.')
 
         # find new top tile
-        top_tile = get_top_tile(geometry=bounds['dataset'], tilesize=status['tilesize'])
+        top_tile = get_top_tile(geometry=bounds['raster'],
+                                tilesize=info['tilesize'])
         
-        # Walk and warp
-        for tile
-
-        # Bring old and new toplevels to same level
-        # Level up until they are the same tile.
-        self.unlock()
-
-
-
-    def get_datasets(self, tiles):
-        """ Return dataset generator. """
-        return tile
-
-    def get_tiles(self, level, geometry):
-        """ Return tiles intersecting with geometry for a level. """
+        # walk and warp
+        tiles = walk_tiles(tile=top_tile,
+                           stop=min_level,
+                           geometry=bounds['raster'])
 
         
-
-
-    
-    def get_dataset(self, level, tile, mode='r'):
-        """
-        Return a gdal dataset.
-
-        If the file corresponding to level and tile does not exist:
-            In (r)ead mode, return mem dataset with nodata
-            In (w)rite mode, create and return tif dataset with nodata
-        """
-        path = os.path.join(self.path, str(level), '{}_{}.tif'.format(*tile))
-        if os.path.exists(path):
-            # Open existing file with correct gdal access mode
-            if mode == 'w':
-                access = gdal.GA_Update
-                logging.debug('Update {}'.format(path))
-            else:
-                access = gdal.GA_ReadOnly
-            return gdal.Open(str(path), access)
-
-        create_args = [str(path),
-                       self.tilesize[0],
-                       self.tilesize[1],
-                       1,
-                       self.datatype,
-                       ['TILED=YES',
-                        'COMPRESS={}'.format(self.compression)]]
-
-        if mode == 'w':
-            # Use gtiff driver
-            driver = gdal.GetDriverByName(b'gtiff')
-            logging.debug('Create {}'.format(path))
-
-            # Create directory if necessary
-            try:
-                os.makedirs(os.path.dirname(path))
-            except OSError:
-                pass  # It existed.
-        else:  # mode == 'r'
-            # Use mem driver
-            driver = gdal.GetDriverByName(b'mem')
-            create_args.pop()  # No compression for mem driver
-
-        # Actual create
-        dataset = driver.Create(*create_args)
-        dataset.SetProjection(
-            projections.get_spatial_reference(self.projection).ExportToWkt(),
-        )
-        dataset.SetGeoTransform(
-            self._geometry(level=level, tile=tile).geotransform(),
-        )
-        band = dataset.GetRasterBand(1)
-        band.SetNoDataValue(self.nodatavalue)
-        band.Fill(self.nodatavalue)
-        return dataset
-
-    def get_tile_dataset(self):
-        pass
-
-
-    def get_topaddress(self, bbox, index=0):
-        """ Return the toplevel address. """
-        point = bbox.Centroid().GetPoint(0)
-        level = self.maxlevel
-        tile = tuple(int(math.floor(c / (2 ** level * t)))
-                     for t, c in zip(self.tilesize, point))
-        return Address(index=index, level=level, tile=tile)
-
-
-    def walk(self, address, polygon, level):
-            """
-            Return generator of addresses at lower levels that intersect
-            with polygon, stopping at level.
-            """
-            if not self.get_polygon(address).Intersects(polygon):
-                return
-            if address.level > level:
-                subaddresses = self.iteraddresses(address=address,
-                                                  level=address.level - 1)
-                for subaddress in subaddresses:
-                    walkaddresses = self.walk(level=level,
-                                              polygon=polygon,
-                                              address=subaddress)
-                    for walkaddress in walkaddresses:
-                        yield walkaddress
-            yield address
-
-    # =========================================================================
-    # Storage
-    # -------------------------------------------------------------------------
-
-    def get_empty(self):
-        """ Return empty numpy array. """
-        return self.nodata * np.ones(self.shape, self.dtype)
-
-    def get_array(self, address):
-        """ Return numpy array. """
-        data = self.data[address.key]
-        return np.fromstring(data, self.dtype).reshape(self.shape)
-
-    def put_array(self, address, array):
-        """ Store numpy array. """
-        self.data[address.key] = array.tostring()
-
-    def pgn_tile(self, address, tile):
-        """
-        Configure tile dataset according to self and address.
-
-        Sets (p)rojection, (g)eotransform and (n)odata.
-        """
-        tile.SetProjection(projections.get_wkt(self.projection))
-        tile.SetGeoTransform(self.get_geotransform(address))
-        if np.dtype(self.dtype).kind == 'f':
-            nodata = float(self.nodata)
-        else:
-            nodata = int(self.nodata)
-        tile.GetRasterBand(1).SetNoDataValue(nodata)
-
-    def get_tile(self, address):
-        """
-        Return container namedtuple,
-
-        The tuple contains a numpy array and a writable gdal dataset,
-        sharing the same memory. Keep a reference to the array,
-        or cause a segfault...
-        """
-        try:
-            array = self.get_array(address)
-        except KeyError:
-            array = self.get_empty()
-        tile = array2dataset(array)
-        self.pgn_tile(address, tile)
-        return Container(array=array, dataset=tile)
-
-    def get_tiles(self, addresses):
-        """ Return generator of readonly gdal datasets. """
-        for address in addresses:
-            try:
-                array = self.get_array(address)
-            except KeyError:
-                continue
-            tile = gdal_array.OpenArray(array)
-            self.pgn_tile(address, tile)
-            yield tile
-
-    # =========================================================================
-    # Operations
-    # -------------------------------------------------------------------------
-
-
-    def oldadd(self, dataset, index=0):
-        """ Add data. """
-        report = self.investigate(conf=conf, dataset=dataset)
-        lowest_level = self.get_level(report.pixel)
-        bbox = geometry2rectangle(report.dataset)
-        topaddress = self.get_topaddress(bbox)
-
-        # Use outer envelope to walk the tiles
-        addresses = self.walk(polygon=bbox,
-                              level=lowest_level,
-                              address=topaddress)
-
         cache = collections.defaultdict(list)
-        previous_level = lowest_level
-        for address in addresses:
+        previous_level = min_level
+        for tile in tiles:
             # Get the data
-            container = self.get_tile(address=address)
-            target = container.dataset
+            target = self.get_dataset(tile=tile, info=info)
 
             # To aggregate or not
-            if address.level == previous_level + 1:
-                sources = [s.dataset for s in cache[previous_level]]
+            if tile.level == previous_level + 1:
+                sources = cache[previous_level]
             else:
                 sources = [dataset]
             for source in sources:
-                rasters.reproject(source, target, gdal.GRA_NearestNeighbour)
-                target.FlushCache()
+                rasters.reproject(source, target)
 
-            if address.level == previous_level + 1:
+            if tile.level == previous_level + 1:
                 del cache[previous_level]
                 o_or_a = 'A'
             else:
                 o_or_a = 'O'
 
             logger.debug('{} {} {}'.format(
-                len(sources), o_or_a, address,
+                len(sources), o_or_a, tile,
             ))
 
-            cache[address.level].append(container)
+            cache[tile.level].append(target)
+            previous_level = tile.level
 
-            self.put_array(address, container.array)
-            previous_level = address.level
+        # TODO Sync old and new toptiles 
+
+        self.unlock()
 
     def warpinto(self, dataset, index=0):
         """
@@ -677,16 +594,21 @@ class Pyramid():
         # If no read tiles, use an address to seek some levels up until
         # data is found, and warp that.
         """
-        report = self.investigate(dataset)
-        level = self.get_level(report.pixel)
-        extent = tuple(polygon2envelopepoints(report.outline).ravel())
-        warps = 0
-        while warps == 0:
-            addresses = self.iteraddresses(level=level,
-                                           index=index,
-                                           extent=extent)
-            tiles = self.get_tiles(addresses)
-            for tile in tiles:
-                rasters.reproject(tile, dataset, gdal.GRA_NearestNeighbour)
-                warps += 1
-            level += 1
+        # if no pyramid info, pyramid is empty.
+        info = self.info
+        if info is None:
+            return
+
+        # get bounds in pyramids projection
+        bounds = get_bounds(dataset=dataset, projection=info['projection'])
+        level = max(info['min_level'], get_level(bounds['pixel']))
+
+        if level >= info['max_level']:
+            sources = [self.get_dataset(info['top_tile'])]
+        else:
+            tiles = get_tiles(tilesize=info['tilesize'],
+                              level=level,
+                              extent=geometry2envelopeextent(bounds['raster']))
+            sources = self.get_datasets(tiles)
+        for source in sources:
+            rasters.reproject(source, dataset)
