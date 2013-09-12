@@ -8,14 +8,11 @@ from __future__ import division
 import collections
 import datetime
 import glob
-import hashlib
 import logging
 import math
 import os
-#import pickle
 
 from osgeo import gdal
-from osgeo import gdal_array
 from osgeo import ogr
 from osgeo import osr
 
@@ -23,7 +20,6 @@ import numpy as np
 
 from gislib import projections
 from gislib import rasters
-from gislib.store import storages
 
 gdal.UseExceptions()
 ogr.UseExceptions()
@@ -33,45 +29,6 @@ logger = logging.getLogger(__name__)
 
 BLOCKSIZE = 256, 256
 GTIFF = gdal.GetDriverByName(b'gtiff')
-
-
-def array2dataset(array):
-    """ 
-    Return gdal dataset. 
-    
-    Fastest way to get a gdal dataset from a numpy array,
-    but keep a refernce to the array around, or a segfault will
-    occur. Also, don't forget to call FlushCache() on the dataset after
-    any operation that affects the array.
-    """
-    datapointer = array.ctypes.data
-    bands, lines, pixels = array.shape
-    datatypecode = gdal_array.NumericTypeCodeToGDALTypeCode(array.dtype.type)
-    datatype = gdal.GetDataTypeName(datatypecode)
-    bandoffset, lineoffset, pixeloffset = array.strides
-
-    dataset_name_template = (
-        'MEM:::'
-        'DATAPOINTER={datapointer},'
-        'PIXELS={pixels},'
-        'LINES={lines},'
-        'BANDS={bands},'
-        'DATATYPE={datatype},'
-        'PIXELOFFSET={pixeloffset},'
-        'LINEOFFSET={lineoffset},'
-        'BANDOFFSET={bandoffset}'
-    )
-    dataset_name = dataset_name_template.format(
-        datapointer=datapointer,
-        pixels=pixels,
-        lines=lines,
-        bands=bands,
-        datatype=datatype,
-        pixeloffset=pixeloffset,
-        lineoffset=lineoffset,
-        bandoffset=bandoffset,
-    )
-    return gdal.Open(dataset_name, gdal.GA_Update)
 
 
 def array2polygon(array):
@@ -180,6 +137,7 @@ def geometry2envelopepoints(geometry):
     """ Return array. """
     return np.array(geometry.GetEnvelope()).reshape(2, 2).transpose()
 
+
 def geometry2envelopeextent(geometry):
     """ Return extent. """
     return tuple(geometry2envelopepoints(geometry).ravel())
@@ -241,7 +199,7 @@ def get_bounds(dataset, projection):
     else:
         pixel = pixel_org
         raster = raster_org.Buffer(-0.01 * min(pixel_trf_size))
-    
+
     return dict(raster=raster, pixel=pixel)
 
 
@@ -251,7 +209,8 @@ def get_level(pixel):
     """
     size = geometry2envelopesize(pixel)
     return int(math.floor(math.log(min(size), 2)))
-    
+
+
 def get_tiles(tilesize, level, extent):
     """ Return tile iterator. """
     # tilesize are pixels, tilespan are projection units
@@ -281,7 +240,7 @@ def walk_tiles(tile, stop, geometry):
         return  # subtiles will not intersect either
     if tile.level > stop:
         # walk subtiles, too
-        subtiles = get_tiles(tilesize=tile.size, 
+        subtiles = get_tiles(tilesize=tile.size,
                              level=tile.level - 1,
                              extent=tile.extent)
         for subtile in subtiles:
@@ -296,14 +255,14 @@ def walk_tiles(tile, stop, geometry):
 
 def get_parent(tile):
     """ Return tile. """
-    return get_tiles(tilesize=tile.size, 
+    return get_tiles(tilesize=tile.size,
                      level=tile.level + 1,
                      extent=tile.extent).next()
 
 
 def get_top_tile(geometry, tilesize, blocksize=BLOCKSIZE):
-    """ 
-    Get the first tile for which a block completely contains geometry.    
+    """
+    Get the first tile for which a block completely contains geometry.
     """
     # Determine at which level it would fit
     envelopesize = geometry2envelopesize(geometry)
@@ -319,7 +278,7 @@ def get_top_tile(geometry, tilesize, blocksize=BLOCKSIZE):
     # Get higher tiles until tile contains geometry
     while not tile.polygon.Contains(geometry):
         tile = get_parent(tile)
-    
+
     return tile
 
 
@@ -337,11 +296,10 @@ class Tile(object):
         self.size = size
         self.level = level
         self.indices = indices
-        self.path = os.path.join(str(level), 
-                                 str(indices[0]), 
+        self.path = os.path.join(str(level),
+                                 str(indices[0]),
                                  str(indices[1]) + '.tif')
 
-    
     def __str__(self):
         return '<Tile: size {}, level {}, indices {}>'.format(
             self.size, self.level, self.indices,
@@ -399,7 +357,7 @@ class Pyramid(object):
 
     @property
     def info(self):
-        """ 
+        """
         Return info dictionary or None if empty pyramid.
         """
         # See if any contents in the pyramid
@@ -410,7 +368,7 @@ class Pyramid(object):
             return
         if not levels:
             return
-        
+
         # Derive extreme levels and top tile properties from filesystem
         top_path = glob.glob(os.path.join(path, max(levels), '*', '*'))[0]
 
@@ -420,7 +378,7 @@ class Pyramid(object):
         # Update with info from folder structure
         min_level = int(min(levels))
         max_level, x, y = map(int, top_path[:-4].split(os.path.sep)[-3:])
-        top_tile = Tile(size=info['tilesize'], level=max_level, indices=(x,y))
+        top_tile = Tile(size=info['tilesize'], level=max_level, indices=(x, y))
 
         info.update(
             max_level=max_level,
@@ -429,15 +387,14 @@ class Pyramid(object):
         )
 
         return info
-    
+
     # =========================================================================
     # Locking
     # -------------------------------------------------------------------------
-    
+
     @property
     def lockpath(self):
         return os.path.join(self.path, '.lock')
-    
 
     def lock(self):
         """ Create a lockfile. """
@@ -467,7 +424,7 @@ class Pyramid(object):
     # =========================================================================
     # Datasets
     # -------------------------------------------------------------------------
-    
+
     def new_dataset(self, tile, info):
         """ Return gdal dataset. """
         path = os.path.join(self.path, self.TILES, tile.path)
@@ -483,37 +440,37 @@ class Pyramid(object):
         dataset.SetProjection(projections.get_wkt(info['projection']))
         dataset.SetGeoTransform(tile.geotransform)
         dataset.GetRasterBand(1).SetNoDataValue(info['nodatavalue'])
-        
+
         return dataset
-        
+
     def get_dataset(self, tile, info=None):
         """
         Return a gdal dataset corresponding to a tile.
 
         Adding an info dictionary implies write mode.
-        
+
         If the dataset does not exist, in read mode a RuntimeError is
         raised; in write mode a new dataset is created.
         """
         path = os.path.join(self.path, self.TILES, tile.path)
-        
+
         if info is None:
             return gdal.Open(path)
 
         try:
-            dataset =  gdal.Open(path, gdal.GA_Update)
+            dataset = gdal.Open(path, gdal.GA_Update)
             logger.debug('Update {}'.format(path))
         except RuntimeError:
-            dataset =  self.new_dataset(tile=tile, info=info)
+            dataset = self.new_dataset(tile=tile, info=info)
             logger.debug('Create {}'.format(path))
         return dataset
 
     def get_datasets(self, tiles, info=None):
-        """ 
-        Return dataset generator. 
+        """
+        Return dataset generator.
 
         Silently skips
-        
+
         """
         for tile in tiles:
             try:
@@ -522,7 +479,7 @@ class Pyramid(object):
                 continue
 
     def get_promoted(self, tile, info):
-        """ 
+        """
         Return parent tile.
 
         Reproject tiles dataset into parent dataset.
@@ -532,7 +489,6 @@ class Pyramid(object):
         target = self.get_dataset(tile=parent, info=info)
         rasters.reproject(source, target)
         return parent
-    
 
     # =========================================================================
     # Interface
@@ -541,7 +497,7 @@ class Pyramid(object):
     def add(self, dataset=None, **kwargs):
         """
         If there is no dataset, check if locked and reload.
-        
+
         Any kwargs are used to override dataset projection and datatype,
         nodatavalue, tilesize. Kwargs are ignored if data already exists
         in the pyramid.
@@ -557,7 +513,7 @@ class Pyramid(object):
         if info is None:
             info = get_info(dataset)
             info.update(kwargs)
-        
+
         # get bounds in pyramids projection
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
 
@@ -569,7 +525,7 @@ class Pyramid(object):
         # find new top tile
         top_tile = get_top_tile(geometry=bounds['raster'],
                                 tilesize=info['tilesize'])
-        
+
         # walk and reproject
         tiles = walk_tiles(tile=top_tile,
                            stop=min_level,
@@ -592,13 +548,6 @@ class Pyramid(object):
             # Remove cache just used
             if tile.level == previous_level + 1:
                 del cache[previous_level]
-                o_or_a = 'A'
-            else:
-                o_or_a = 'O'
-
-            #logger.debug('{} {} {}'.format(
-                #len(sources), o_or_a, tile,
-            #))
 
             cache[tile.level].append(target)
             previous_level = tile.level

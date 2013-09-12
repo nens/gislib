@@ -11,14 +11,53 @@ import logging
 import os
 
 from osgeo import gdal
+from osgeo import gdal_array
 from osgeo import osr
 import numpy as np
 
 from gislib import projections
 
-
-# Enable gdal exceptions
 gdal.UseExceptions()
+osr.UseExceptions()
+
+
+def array2dataset(array):
+    """
+    Return gdal dataset.
+
+    Fastest way to get a gdal dataset from a numpy array,
+    but keep a refernce to the array around, or a segfault will
+    occur. Also, don't forget to call FlushCache() on the dataset after
+    any operation that affects the array.
+    """
+    datapointer = array.ctypes.data
+    bands, lines, pixels = array.shape
+    datatypecode = gdal_array.NumericTypeCodeToGDALTypeCode(array.dtype.type)
+    datatype = gdal.GetDataTypeName(datatypecode)
+    bandoffset, lineoffset, pixeloffset = array.strides
+
+    dataset_name_template = (
+        'MEM:::'
+        'DATAPOINTER={datapointer},'
+        'PIXELS={pixels},'
+        'LINES={lines},'
+        'BANDS={bands},'
+        'DATATYPE={datatype},'
+        'PIXELOFFSET={pixeloffset},'
+        'LINEOFFSET={lineoffset},'
+        'BANDOFFSET={bandoffset}'
+    )
+    dataset_name = dataset_name_template.format(
+        datapointer=datapointer,
+        pixels=pixels,
+        lines=lines,
+        bands=bands,
+        datatype=datatype,
+        pixeloffset=pixeloffset,
+        lineoffset=lineoffset,
+        bandoffset=bandoffset,
+    )
+    return gdal.Open(dataset_name, gdal.GA_Update)
 
 
 def get_transformed_extent(extent, source_projection, target_projection):
