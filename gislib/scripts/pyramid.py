@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# (c) Nelen & Schuurmans.  GPL licensed, see LICENSE.rst.
 
 from __future__ import print_function
 from __future__ import unicode_literals
@@ -7,17 +8,20 @@ from __future__ import division
 
 import argparse
 import logging
+import shutil
+import sys
 
 from osgeo import gdal
 
-from gislib import rasters
 from gislib import pyramids
 
 description = """
-    Commandline tool for working with nens/gislib pyramid datasets.
+Commandline tool for working with nens/gislib stores.
 """
 
-logging.root.level = logging.DEBUG
+logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 
 def get_parser():
     """ Return argument parser. """
@@ -31,15 +35,36 @@ def get_parser():
     return parser
 
 
-def pyramid(targetpath, sourcepaths):
-    """ Do something spectacular. """
-    from arjan.monitor import Monitor; mon = Monitor()
-    source = gdal.Open(sourcepaths[0])
-    pyramid = rasters.Pyramid(targetpath)
-    pyramid.add(source)
-    mon.check('Pyramid2') 
+def clean(targetpath, sourcepaths):
+    """ Clean up. """
+    try:
+        shutil.rmtree(targetpath)
+    except OSError:
+        pass
+
+
+def fill(targetpath, sourcepaths):
+    """ Fill. """
+    pyramid = pyramids.Pyramid(path=targetpath)
+    for i, sourcepath in enumerate(sourcepaths):
+        dataset = gdal.Open(sourcepath)
+        pyramid.add(dataset, projection=3857)
+
+
+def load(targetpath, sourcepaths):
+    """ Load. """
+    pyramid = pyramids.Pyramid(path=targetpath)
+    driver = gdal.GetDriverByName(b'mem')
+    for i, sourcepath in enumerate(sourcepaths):
+        original = gdal.Open(sourcepath)
+        dataset = driver.CreateCopy('', original)
+        band = dataset.GetRasterBand(1)
+        band.Fill(band.GetNoDataValue())
+        pyramid.warpinto(dataset)
 
 
 def main():
     """ Call command with args from parser. """
-    pyramid(**vars(get_parser().parse_args()))
+    clean(**vars(get_parser().parse_args()))
+    fill(**vars(get_parser().parse_args()))
+    #load(**vars(get_parser().parse_args()))
