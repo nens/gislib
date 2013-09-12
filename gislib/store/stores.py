@@ -473,9 +473,9 @@ class Pyramid():
             else:
                 o_or_a = 'O'
 
-            #logger.debug('{} {} {}'.format(
-                #len(sources), o_or_a, address,
-            #))
+            logger.debug('{} {} {}'.format(
+                len(sources), o_or_a, address,
+            ))
 
             cache[address.level].append(container)
 
