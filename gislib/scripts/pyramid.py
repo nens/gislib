@@ -50,7 +50,7 @@ def fill(targetpath, sourcepaths):
         dataset = gdal.Open(sourcepath)
         pyramid.add(dataset,
                     projection=3857,
-                    tilesize=(1024, 1024))
+                    tilesize=(2048, 2048))
 
 
 def load(targetpath, sourcepaths):

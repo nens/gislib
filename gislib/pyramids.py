@@ -294,6 +294,13 @@ def walk_tiles(tile, stop, geometry):
     yield tile
 
 
+def get_parent(tile):
+    """ Return tile. """
+    return get_tiles(tilesize=tile.size, 
+                     level=tile.level + 1,
+                     extent=tile.extent).next()
+
+
 def get_top_tile(geometry, tilesize, blocksize=BLOCKSIZE):
     """ 
     Get the first tile for which a block completely contains geometry.    
@@ -305,14 +312,13 @@ def get_top_tile(geometry, tilesize, blocksize=BLOCKSIZE):
 
     # Find intersecting tile at that level
     point = geometry.Centroid().GetPoint(0)
-    indices = tuple(int(math.floor(c / (2 ** level * b)))
-                    for b, c in zip(blocksize, point))
-    tile = Tile(size=size, level=level, indices=indices)
+    indices = tuple(int(math.floor(p / (2 ** level * t)))
+                    for t, p in zip(tilesize, point))
+    tile = Tile(size=tilesize, level=level, indices=indices)
 
     # Get higher tiles until tile contains geometry
     while not tile.polygon.Contains(geometry):
-        tile = get_tiles(tilesize=tilesize, 
-                         level=tile.level + 1, extent=tile.extent).next()
+        tile = get_parent(tile)
     
     return tile
 
@@ -380,6 +386,8 @@ class Pyramid(object):
         'TILED=TRUE',
     ]
 
+    TILES = 'tiles'
+
     def __init__(self, path):
         """
         Initialize.
@@ -396,15 +404,16 @@ class Pyramid(object):
         """
         logger.info('info accessed!')
         # See if any contents in the pyramid
+        path = os.path.join(self.path, self.TILES)
         try:
-            levels = os.listdir(self.path)
+            levels = os.listdir(path)
         except OSError:
             return
         if not levels:
             return
         
         # Derive extreme levels and top tile properties from filesystem
-        top_path = glob.glob(os.path.join(self.path, max(levels), '*', '*'))[0]
+        top_path = glob.glob(os.path.join(path, max(levels), '*', '*'))[0]
 
         # Start with info from top tile dataset
         info = get_info(gdal.Open(top_path))
@@ -419,7 +428,7 @@ class Pyramid(object):
             min_level=min_level,
             top_tile=top_tile,
         )
-        
+
         return info
     
     # =========================================================================
@@ -462,7 +471,7 @@ class Pyramid(object):
     
     def new_dataset(self, tile, info):
         """ Return gdal dataset. """
-        path = os.path.join(self.path, tile.path)
+        path = os.path.join(self.path, self.TILES, tile.path)
 
         try:
             os.makedirs(os.path.dirname(path))
@@ -487,7 +496,7 @@ class Pyramid(object):
         If the dataset does not exist, in read mode a RuntimeError is
         raised; in write mode a new dataset is created.
         """
-        path = os.path.join(self.path, tile.path)
+        path = os.path.join(self.path, self.TILES, tile.path)
         
         if info is None:
             return gdal.Open(path)
@@ -512,6 +521,18 @@ class Pyramid(object):
                 yield self.get_dataset(tile=tile, info=info)
             except RuntimeError:
                 continue
+
+    def get_promoted(self, tile, info):
+        """ 
+        Return parent tile.
+
+        Reproject tiles dataset into parent dataset.
+        """
+        parent = get_parent(tile)
+        source = self.get_dataset(tile=tile)
+        target = self.get_dataset(tile=parent, info=info)
+        rasters.reproject(source, target)
+        return parent
     
 
     # =========================================================================
@@ -526,8 +547,8 @@ class Pyramid(object):
         nodatavalue, tilesize. Kwargs are ignored if data already exists
         in the pyramid.
         """
-        # lock
         self.lock()
+
         if dataset is None:
             # unlock and return
             return self.unlock()
@@ -538,7 +559,6 @@ class Pyramid(object):
             info = get_info(dataset)
             info.update(kwargs)
         
-
         # get bounds in pyramids projection
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
 
@@ -551,12 +571,11 @@ class Pyramid(object):
         top_tile = get_top_tile(geometry=bounds['raster'],
                                 tilesize=info['tilesize'])
         
-        # walk and warp
+        # walk and reproject
         tiles = walk_tiles(tile=top_tile,
                            stop=min_level,
                            geometry=bounds['raster'])
 
-        
         cache = collections.defaultdict(list)
         previous_level = min_level
         for tile in tiles:
@@ -571,20 +590,29 @@ class Pyramid(object):
             for source in sources:
                 rasters.reproject(source, target)
 
+            # Remove cache just used
             if tile.level == previous_level + 1:
                 del cache[previous_level]
                 o_or_a = 'A'
             else:
                 o_or_a = 'O'
 
-            logger.debug('{} {} {}'.format(
-                len(sources), o_or_a, tile,
-            ))
+            #logger.debug('{} {} {}'.format(
+                #len(sources), o_or_a, tile,
+            #))
 
             cache[tile.level].append(target)
             previous_level = tile.level
 
-        # TODO Sync old and new toptiles 
+        # Sync old and new toptiles
+        hi, lo = top_tile, info.get('top_tile', top_tile)
+        if hi.level < lo.level:
+            hi, lo = lo, hi  # swap
+        while lo.level < hi.level:
+            lo = self.get_promoted(tile=lo, info=info)
+        while lo.indices != hi.indices:
+            lo = self.get_promoted(tile=lo, info=info)
+            hi = self.get_promoted(tile=hi, info=info)
 
         self.unlock()
 
