@@ -25,6 +25,25 @@ Create the pyramid using gdal::
 
 Working with the time-pyramid raster store
 ------------------------------------------
-store = stores.Pyramid(path_to_store)
-store.add(gdal.Open(path_to_rasterfile)
-store.warpinto(my_writable_gdal_dataset)
+
+* Instantiate a pyramid::
+    
+    pyramid = pyramids.pyramid(path_to_pyramid)
+
+* Adding raster data to a pyramid::
+
+    pyramid.add(gdal_dataset1)
+    pyramid.add(gdal_dataset2)
+
+The first dataset added to a new pyramid determines the pyramid's
+datatype, projection, tilesize and nodatavalue from the dataset being
+added. This can be overridden by supplying other properties as keyword
+arguments::
+    
+    pyramid.add(gdal_dataset, projection=3857, tilesize=(1024, 1024))
+
+Keyword arguments are silently ignored on subsequent additions.
+
+* Retrieving rasterdata from a pyramid::
+
+    pyramid.warpinto(gdal_dataset)
