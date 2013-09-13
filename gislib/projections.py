@@ -6,7 +6,10 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
+import string
+
 from osgeo import osr
+
 
 # Enable gdal exceptions
 osr.UseExceptions()
@@ -45,6 +48,8 @@ def get_spatial_reference(projection):
             sr.ImportFromProj4(str(projection))
         elif projection.lower().startswith('epsg:'):
             sr.ImportFromEPSG(int(projection.split(':')[1]))
+        elif projection[0] in string.digits:
+            sr.ImportFromEPSG(int(projection))
         else:
             sr.ImportFromWkt(str(projection))
     return sr
@@ -53,6 +58,7 @@ def get_spatial_reference(projection):
 def get_wkt(projection):
     """ Convenience function. """
     return get_spatial_reference(projection).ExportToWkt()
+
 
 def get_proj4(projection):
     """ Convenience function. """

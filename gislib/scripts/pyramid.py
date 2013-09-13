@@ -16,7 +16,7 @@ from osgeo import gdal
 from gislib import pyramids
 
 description = """
-Commandline tool for working with nens/gislib stores.
+Commandline tool for working with gislib pyramids.
 """
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
@@ -30,44 +30,46 @@ def get_parser():
     )
     parser.add_argument('targetpath', metavar='TARGET')
     parser.add_argument('sourcepaths',
-                        nargs='+',
+                        nargs='*',
                         metavar='SOURCE')
+    parser.add_argument('-b', '--blocksize',
+                        nargs=2,
+                        metavar=('WIDTH', 'HEIGHT'))
+    parser.add_argument('-d', '--datatype')
+    parser.add_argument('-n', '--nodatavalue')
+    parser.add_argument('-p', '--projection')
+    parser.add_argument('-t', '--tilesize',
+                        nargs=2,
+                        metavar=('WIDTH', 'HEIGHT'))
     return parser
 
 
-def clean(targetpath, sourcepaths):
-    """ Clean up. """
-    try:
-        shutil.rmtree(targetpath)
-    except OSError:
-        pass
-
-
-def fill(targetpath, sourcepaths):
-    """ Fill. """
+def pyramid(targetpath, sourcepaths, blocksize,
+            datatype, nodatavalue, projection, tilesize):
+    """ Create or update pyramid. """
     pyramid = pyramids.Pyramid(path=targetpath)
+
+    if not sourcepaths:
+        return pyramid.add()
+    
+    kwargs = {}
+    if blocksize:
+        kwargs.update(blocksize=tuple(int(t) for t in blocksize))
+    if datatype:
+        kwargs.update(datatype=gdal.GetDataTypeByName(datatype))
+    if nodatavalue:
+        kwargs.update(nodatavalue=float(nodatavalue))
+    if projection:
+        kwargs.update(projection=projection)
+    if tilesize:
+        kwargs.update(tilesize=tuple(int(t) for t in tilesize))
+
     for i, sourcepath in enumerate(sourcepaths):
         logger.info(sourcepath)
         dataset = gdal.Open(sourcepath)
-        pyramid.add(dataset,
-                    projection=3857,
-                    tilesize=(2048, 2048))
-
-
-def load(targetpath, sourcepaths):
-    """ Load. """
-    pyramid = pyramids.Pyramid(path=targetpath)
-    driver = gdal.GetDriverByName(b'mem')
-    for i, sourcepath in enumerate(sourcepaths):
-        original = gdal.Open(sourcepath)
-        dataset = driver.CreateCopy('', original)
-        band = dataset.GetRasterBand(1)
-        band.Fill(band.GetNoDataValue())
-        pyramid.warpinto(dataset)
+        pyramid.add(dataset, **kwargs)
 
 
 def main():
     """ Call command with args from parser. """
-    #clean(**vars(get_parser().parse_args()))
-    fill(**vars(get_parser().parse_args()))
-    #load(**vars(get_parser().parse_args()))
+    pyramid(**vars(get_parser().parse_args()))

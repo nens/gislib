@@ -28,7 +28,6 @@ osr.UseExceptions()
 
 logger = logging.getLogger(__name__)
 
-BLOCKSIZE = 256, 256
 GTIFF = gdal.GetDriverByName(b'gtiff')
 TIMEOUT = 60  # seconds
 
@@ -155,6 +154,7 @@ def get_info(dataset):
     """ Return dictionary. """
     band = dataset.GetRasterBand(1)
     return dict(datatype=band.DataType,
+                blocksize=band.GetBlockSize(),
                 nodatavalue=band.GetNoDataValue(),
                 projection=dataset.GetProjection(),
                 tilesize=(dataset.RasterXSize, dataset.RasterYSize))
@@ -262,7 +262,7 @@ def get_parent(tile):
                      extent=tile.extent).next()
 
 
-def get_top_tile(geometry, tilesize, blocksize=BLOCKSIZE):
+def get_top_tile(geometry, tilesize, blocksize):
     """
     Get the first tile for which a block completely contains geometry.
     """
@@ -338,14 +338,6 @@ class Pyramid(object):
     Pyramid datastore.
     """
 
-    OPTIONS = [
-        'BLOCKXSIZE={}'.format(BLOCKSIZE[0]),
-        'BLOCKYSIZE={}'.format(BLOCKSIZE[1]),
-        'COMPRESS=DEFLATE',
-        'SPARSE_OK=TRUE',
-        'TILED=TRUE',
-    ]
-
     TILES = 'tiles'
 
     def __init__(self, path):
@@ -356,6 +348,16 @@ class Pyramid(object):
         instances will always be up-to-date.
         """
         self.path = path
+
+    def get_options(self, blocksize):
+        """ Return blocksize dependent gtiff creation options. """
+        return [
+            'BLOCKXSIZE={}'.format(blocksize[0]),
+            'BLOCKYSIZE={}'.format(blocksize[1]),
+            'COMPRESS=DEFLATE',
+            'SPARSE_OK=TRUE',
+            'TILED=TRUE',
+        ]
 
     @property
     def info(self):
@@ -443,8 +445,9 @@ class Pyramid(object):
         except OSError:
             pass  # It existed.
 
+        create_options = self.get_options(info['blocksize'])
         dataset = GTIFF.Create(path, tile.size[0], tile.size[1],
-                               1, info['datatype'], self.OPTIONS)
+                               1, info['datatype'], create_options)
 
         dataset.SetProjection(projections.get_wkt(info['projection']))
         dataset.SetGeoTransform(tile.geotransform)
@@ -533,7 +536,8 @@ class Pyramid(object):
 
         # find new top tile
         top_tile = get_top_tile(geometry=bounds['raster'],
-                                tilesize=info['tilesize'])
+                                tilesize=info['tilesize'],
+                                blocksize=info['blocksize'])
 
         # walk and reproject
         tiles = walk_tiles(tile=top_tile,
