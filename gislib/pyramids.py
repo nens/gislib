@@ -11,6 +11,7 @@ import glob
 import logging
 import math
 import os
+import time
 
 from osgeo import gdal
 from osgeo import ogr
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 BLOCKSIZE = 256, 256
 GTIFF = gdal.GetDriverByName(b'gtiff')
+TIMEOUT = 60  # seconds
 
 
 def array2polygon(array):
@@ -388,6 +390,13 @@ class Pyramid(object):
 
         return info
 
+    @property
+    def infocache(self):
+        now = time.time()
+        if not hasattr(self, '_info') or now - self._info['time'] > TIMEOUT:
+            self._info = dict(time=now, info=self.info)
+        return self._info['info']
+
     # =========================================================================
     # Locking
     # -------------------------------------------------------------------------
@@ -571,7 +580,7 @@ class Pyramid(object):
         # data is found, and warp that.
         """
         # if no pyramid info, pyramid is empty.
-        info = self.info
+        info = self.infocache
         if info is None:
             return
 
