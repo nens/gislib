@@ -16,6 +16,7 @@ from osgeo import osr
 import numpy as np
 
 from gislib import projections
+from gislib import utils
 
 gdal.UseExceptions()
 osr.UseExceptions()
@@ -58,40 +59,6 @@ def array2dataset(array):
         bandoffset=bandoffset,
     )
     return gdal.Open(dataset_name, gdal.GA_Update)
-
-
-def get_transformed_extent(extent, source_projection, target_projection):
-        """
-        Return new reprojected geometry.
-        Must keep cellsize square.
-
-        Projections can be epsg, or proj4, or wkt
-        Keep the size constant, for now.
-        """
-        # Turn extent into array of corner points
-        points_source = np.array(extent)[np.array([[0, 1],
-                                                   [2, 1],
-                                                   [2, 3],
-                                                   [0, 3]])]
-        # Transform according to projections
-        x_target, y_target = np.array(osr.CoordinateTransformation(
-            projections.get_spatial_reference(source_projection),
-            projections.get_spatial_reference(target_projection),
-        ).TransformPoints(points_source))[:, 0:2].T
-
-        # Return as extent
-        return (x_target.min(),
-                y_target.min(),
-                x_target.max(),
-                y_target.max())
-
-
-def get_extent_intersection(extent1, extent2):
-    """ Return the intersecting extent. """
-    return (max(extent1[0], extent2[0]),
-            max(extent1[1], extent2[1]),
-            min(extent1[2], extent2[2]),
-            min(extent1[3], extent2[3]))
 
 
 def reproject(source, target, algorithm=gdal.GRA_NearestNeighbour):
@@ -181,7 +148,7 @@ class DatasetGeometry(Geometry):
 
     def transformed_cellsize(self, source_projection, target_projection):
         """ Return transformed cellsize. """
-        left, bottom, right, top = get_transformed_extent(
+        left, bottom, right, top = utils.get_transformed_extent(
             self.extent, source_projection, target_projection,
         )
         return min((right - left) / self.size[0],
@@ -397,7 +364,7 @@ class Pyramid(AbstractGeoContainer):
         """
         # Determine extent in pyramid projection from dataset
         dataset_geometry = DatasetGeometry.from_dataset(dataset)
-        transformed_extent = get_transformed_extent(
+        transformed_extent = utils.get_transformed_extent(
             extent=dataset_geometry.extent,
             source_projection=dataset.GetProjection(),
             target_projection=self.projection,
@@ -413,8 +380,8 @@ class Pyramid(AbstractGeoContainer):
 
         # Return extent, or intersected extent based on limit setting
         if limit:
-            extent = np.array(get_extent_intersection(self.extent,
-                                                      dataset_extent))
+            extent = np.array(utils.get_extent_intersection(self.extent,
+                                                            dataset_extent))
         else:
             extent = np.array(dataset_extent)
 

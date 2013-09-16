@@ -11,6 +11,50 @@ from osgeo import ogr
 import numpy as np
 
 
+def array2polygon(array):
+    """
+    Return a polygon geometry.
+
+    This method numpy to prepare a wkb string. Seems only faster for
+    larger polygons, compared to adding points individually.
+    """
+    # 13 bytes for the header, 16 bytes per point
+    nbytes = 13 + 16 * array.shape[0]
+    data = np.empty(nbytes, dtype=np.uint8)
+    # little endian
+    data[0:1] = 1
+    # wkb type, number of rings, number of points
+    data[1:13].view(np.uint32)[:] = (3, 1, array.shape[0])
+    # set the points
+    data[13:].view(np.float64)[:] = array.ravel()
+    return ogr.CreateGeometryFromWkb(data.tostring())
+
+
+def points2polygon(points):
+    """
+    Return a polygon geometry.
+
+    Adds points individually. Faster for small amounts of points.
+    """
+    ring = ogr.Geometry(ogr.wkbLinearRing)
+    for x, y in points:
+        ring.AddPoint_2D(x, y)
+    polygon = ogr.Geometry(ogr.wkbPolygon)
+    polygon.AddGeometry(ring)
+    return polygon
+
+
+def geometry2polygon(geometry):
+    """ Return the rectangular polygon of geometry's envelope. """
+    xmin, xmax, ymin, ymax = geometry.GetEnvelope()
+    points = ((xmin, ymin),
+              (xmax, ymin),
+              (xmax, ymax),
+              (xmin, ymax),
+              (xmin, ymin))
+    return points2polygon(points)
+
+
 def point2geometry(point):
     """ Return geometry. """
     geometry = ogr.Geometry(ogr.wkbPoint)

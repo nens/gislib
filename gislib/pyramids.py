@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import time
+import shutil
 
 from osgeo import gdal
 from osgeo import ogr
@@ -21,6 +22,7 @@ import numpy as np
 
 from gislib import projections
 from gislib import rasters
+from gislib import vectors
 
 gdal.UseExceptions()
 ogr.UseExceptions()
@@ -29,40 +31,8 @@ osr.UseExceptions()
 logger = logging.getLogger(__name__)
 
 GTIFF = gdal.GetDriverByName(b'gtiff')
+MEM = gdal.GetDriverByName(b'mem')
 TIMEOUT = 60  # seconds
-
-
-def array2polygon(array):
-    """
-    Return a polygon geometry.
-
-    This method numpy to prepare a wkb string. Seems only faster for
-    larger polygons, compared to adding points individually.
-    """
-    # 13 bytes for the header, 16 bytes per point
-    nbytes = 13 + 16 * array.shape[0]
-    data = np.empty(nbytes, dtype=np.uint8)
-    # little endian
-    data[0:1] = 1
-    # wkb type, number of rings, number of points
-    data[1:13].view(np.uint32)[:] = (3, 1, array.shape[0])
-    # set the points
-    data[13:].view(np.float64)[:] = array.ravel()
-    return ogr.CreateGeometryFromWkb(data.tostring())
-
-
-def points2polygon(points):
-    """
-    Return a polygon geometry.
-
-    Adds points individually. Faster for small amounts of points.
-    """
-    ring = ogr.Geometry(ogr.wkbLinearRing)
-    for x, y in points:
-        ring.AddPoint_2D(x, y)
-    polygon = ogr.Geometry(ogr.wkbPolygon)
-    polygon.AddGeometry(ring)
-    return polygon
 
 
 def dataset2outlinepolygon(dataset):
@@ -104,7 +74,7 @@ def dataset2outlinepolygon(dataset):
     array[:, 0] = xul + dxx * px + dxy * py
     array[:, 1] = yul + dyx * px + dyy * py
 
-    return array2polygon(array)
+    return vectors.array2polygon(array)
 
 
 def dataset2pixelpolygon(dataset):
@@ -115,7 +85,7 @@ def dataset2pixelpolygon(dataset):
               (xul + dxx + dxy, yul + dyx + dyy),
               (xul + dxy, yul + dyy),
               (xul, yul))
-    return points2polygon(points)
+    return vectors.points2polygon(points)
 
 
 def extent2polygon(xmin, ymin, xmax, ymax):
@@ -125,13 +95,7 @@ def extent2polygon(xmin, ymin, xmax, ymax):
               (xmax, ymax),
               (xmin, ymax),
               (xmin, ymin))
-    return points2polygon(points)
-
-
-def geometry2envelopepolygon(geometry):
-    """ Return the rectangular polygon of geometry's envelope. """
-    xmin, xmax, ymin, ymax = geometry.GetEnvelope()
-    return extent2polygon(xmin, ymin, xmax, ymax)
+    return vectors.points2polygon(points)
 
 
 def geometry2envelopepoints(geometry):
@@ -284,6 +248,16 @@ def get_top_tile(geometry, tilesize, blocksize):
     return tile
 
 
+def scale_geotransform(geotransform, factor):
+    """ Return geotransform scaled by a factor. """
+    return(geotransform[0],
+           geotransform[1] * factor,
+           geotransform[2] * factor,
+           geotransform[3],
+           geotransform[4] * factor,
+           geotransform[5] * factor)
+
+
 class LockError(Exception):
     pass
 
@@ -339,6 +313,7 @@ class Pyramid(object):
     """
 
     TILES = 'tiles'
+    PEAK = 'peak'
 
     def __init__(self, path):
         """
@@ -374,13 +349,14 @@ class Pyramid(object):
             return
 
         # Derive extreme levels and top tile properties from filesystem
-        top_path = glob.glob(os.path.join(path, max(levels), '*', '*'))[0]
+        top_path = glob.glob(os.path.join(path,
+                                          max(levels, key=int), '*', '*'))[0]
 
         # Start with info from top tile dataset
         info = get_info(gdal.Open(top_path))
 
         # Update with info from folder structure
-        min_level = int(min(levels))
+        min_level = int(min(levels, key=int))
         max_level, x, y = map(int, top_path[:-4].split(os.path.sep)[-3:])
         top_tile = Tile(size=info['tilesize'], level=max_level, indices=(x, y))
 
@@ -389,6 +365,10 @@ class Pyramid(object):
             min_level=min_level,
             top_tile=top_tile,
         )
+
+        # Add a peak if this is not the peak
+        if not self.path.endswith(self.PEAK):
+            info.update(peak=Pyramid(os.path.join(self.path, self.PEAK)))
 
         return info
 
@@ -399,13 +379,19 @@ class Pyramid(object):
             self._info = dict(time=now, info=self.info)
         return self._info['info']
 
+    @property
+    def extent(self):
+        return self.info['top_tile'].extent
+        """ Return the extent of peaks top tile. """
+        return None
+
     # =========================================================================
     # Locking
     # -------------------------------------------------------------------------
 
     @property
     def lockpath(self):
-        return os.path.join(self.path, '.lock')
+        return os.path.join(self.path, 'lock')
 
     def lock(self):
         """ Create a lockfile. """
@@ -477,16 +463,15 @@ class Pyramid(object):
             logger.debug('Create {}'.format(path))
         return dataset
 
-    def get_datasets(self, tiles, info=None):
+    def get_datasets(self, tiles):
         """
-        Return dataset generator.
+        Return read-only dataset generator.
 
-        Silently skips
-
+        Silently skips when dataset does not exist on disk.
         """
         for tile in tiles:
             try:
-                yield self.get_dataset(tile=tile, info=info)
+                yield self.get_dataset(tile=tile)
             except RuntimeError:
                 continue
 
@@ -497,10 +482,39 @@ class Pyramid(object):
         Reproject tiles dataset into parent dataset.
         """
         parent = get_parent(tile)
-        source = self.get_dataset(tile=tile)
+        source = self.get_dataset(tile)
         target = self.get_dataset(tile=parent, info=info)
         rasters.reproject(source, target)
         return parent
+
+    def update_peak(self, tile, info):
+        """
+        Update a peak pyramid.
+
+        Pyramids with large tilesizes warp slow at high zoomlevels. The
+        use of a peak pyramid with a small tilesize on top of the main
+        pyramid solves that.
+        """
+        path = os.path.join(self.path, self.PEAK)
+        if os.path.exists(path):
+            shutil.rmtree(path)
+        peak = Pyramid(path)
+        dataset = self.get_dataset(tile)
+
+        # Base of peak is one higher than tile
+        base = MEM.Create('',
+                          info['tilesize'][0] // 2,
+                          info['tilesize'][1] // 2,
+                          1,
+                          info['datatype'])
+        base.SetProjection(info['projection'])
+        base.GetRasterBand(1).SetNoDataValue(info['nodatavalue'])
+        base.GetRasterBand(1).Fill(info['nodatavalue'])
+        base.SetGeoTransform(
+            scale_geotransform(dataset.GetGeoTransform(), 2),
+        )
+        rasters.reproject(dataset, base)
+        peak.add(base, blocksize=(256, 256), tilesize=(256, 256))
 
     # =========================================================================
     # Interface
@@ -525,6 +539,8 @@ class Pyramid(object):
         if info is None:
             info = get_info(dataset)
             info.update(kwargs)
+            if not self.path.endswith(self.PEAK):
+                info.update(peak=Pyramid(os.path.join(self.path, self.PEAK)))
 
         # get bounds in pyramids projection
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
@@ -544,7 +560,7 @@ class Pyramid(object):
                            stop=min_level,
                            geometry=bounds['raster'])
 
-        cache = collections.defaultdict(list)
+        children = collections.defaultdict(list)
         previous_level = min_level
         for tile in tiles:
             # Get the data
@@ -552,21 +568,22 @@ class Pyramid(object):
 
             # To aggregate or not
             if tile.level == previous_level + 1:
-                sources = cache[previous_level]
+                sources = children[previous_level]
             else:
                 sources = [dataset]
             for source in sources:
                 rasters.reproject(source, target)
+            target = None  # Writes the header
 
-            # Remove cache just used
+            # Remove children just used
             if tile.level == previous_level + 1:
-                del cache[previous_level]
+                del children[previous_level]
 
-            cache[tile.level].append(target)
+            children[tile.level].append(self.get_dataset(tile))
             previous_level = tile.level
 
         # sync old and new toptiles
-        hi, lo = top_tile, info.get('top_tile', top_tile)
+        lo, hi = top_tile, info.get('top_tile', top_tile)
         if hi.level < lo.level:
             hi, lo = lo, hi  # swap
         while lo.level < hi.level:
@@ -575,14 +592,14 @@ class Pyramid(object):
             lo = self.get_promoted(tile=lo, info=info)
             hi = self.get_promoted(tile=hi, info=info)
 
+        # Update peak
+        if 'peak' in info:
+            self.update_peak(tile=hi, info=info)
+
         self.unlock()
 
-    def warpinto(self, dataset, index=0):
-        """
-        # Warp from lowest level and count read tiles.
-        # If no read tiles, use an address to seek some levels up until
-        # data is found, and warp that.
-        """
+    def warpinto(self, dataset):
+        """ Warp data from the pyramid into dataset. """
         # if no pyramid info, pyramid is empty.
         info = self.infocache
         if info is None:
@@ -592,12 +609,16 @@ class Pyramid(object):
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
         level = max(info['min_level'], get_level(bounds['pixel']))
 
+        # warp from peak if appropriate
+        if level > info['max_level'] and 'peak' in info:
+            return info['peak'].warpinto(dataset)
+
+        # This is the top of the main pyramid (level == max_level) or the peak
         if level >= info['max_level']:
-            sources = [self.get_dataset(info['top_tile'])]
+            tiles = info['top_tile'],
         else:
             tiles = get_tiles(tilesize=info['tilesize'],
                               level=level,
                               extent=geometry2envelopeextent(bounds['raster']))
-            sources = self.get_datasets(tiles)
-        for source in sources:
+        for source in self.get_datasets(tiles):
             rasters.reproject(source, dataset)
