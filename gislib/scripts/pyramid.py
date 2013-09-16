@@ -20,7 +20,7 @@ description = """
 Commandline tool for working with gislib pyramids.
 """
 
-logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
