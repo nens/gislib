@@ -14,6 +14,7 @@ import sys
 from osgeo import gdal
 
 from gislib import pyramids
+from gislib import progress
 
 description = """
 Commandline tool for working with gislib pyramids.
@@ -47,6 +48,7 @@ def get_parser():
 def pyramid(targetpath, sourcepaths, blocksize,
             datatype, nodatavalue, projection, tilesize):
     """ Create or update pyramid. """
+    indicator = progress.Indicator(len(sourcepaths))
     pyramid = pyramids.Pyramid(path=targetpath)
 
     if not sourcepaths:
@@ -65,9 +67,11 @@ def pyramid(targetpath, sourcepaths, blocksize,
         kwargs.update(tilesize=tuple(int(t) for t in tilesize))
 
     for i, sourcepath in enumerate(sourcepaths):
-        logger.info(sourcepath)
         dataset = gdal.Open(sourcepath)
-        pyramid.add(dataset, **kwargs)
+        pyramid.add(dataset, sync=False, **kwargs)
+        indicator.update()
+    pyramid.sync()
+
 
 
 def main():

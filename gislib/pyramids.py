@@ -154,8 +154,8 @@ def get_bounds(dataset, projection):
 
     # verdict
     pixel_trf_size = geometry2envelopesize(pixel_trf)
-    diff = (geometry2envelopepoints(raster_trf) -
-            geometry2envelopepoints(raster_org))
+    diff = np.abs(geometry2envelopepoints(raster_trf) -
+                  geometry2envelopepoints(raster_org))
     transform = (100 * diff > pixel_trf_size).any()
 
     # return
@@ -487,46 +487,19 @@ class Pyramid(object):
         rasters.reproject(source, target)
         return parent
 
-    def update_peak(self, tile, info):
-        """
-        Update a peak pyramid.
-
-        Pyramids with large tilesizes warp slow at high zoomlevels. The
-        use of a peak pyramid with a small tilesize on top of the main
-        pyramid solves that.
-        """
-        path = os.path.join(self.path, self.PEAK)
-        if os.path.exists(path):
-            shutil.rmtree(path)
-        peak = Pyramid(path)
-        dataset = self.get_dataset(tile)
-
-        # Base of peak is one higher than tile
-        base = MEM.Create('',
-                          info['tilesize'][0] // 2,
-                          info['tilesize'][1] // 2,
-                          1,
-                          info['datatype'])
-        base.SetProjection(info['projection'])
-        base.GetRasterBand(1).SetNoDataValue(info['nodatavalue'])
-        base.GetRasterBand(1).Fill(info['nodatavalue'])
-        base.SetGeoTransform(
-            scale_geotransform(dataset.GetGeoTransform(), 2),
-        )
-        rasters.reproject(dataset, base)
-        peak.add(base, blocksize=(256, 256), tilesize=(256, 256))
-
     # =========================================================================
     # Interface
     # -------------------------------------------------------------------------
 
-    def add(self, dataset=None, **kwargs):
+    def add(self, dataset=None, sync=True, **kwargs):
         """
         If there is no dataset, check if locked and reload.
 
         Any kwargs are used to override dataset projection and datatype,
         nodatavalue, tilesize. Kwargs are ignored if data already exists
         in the pyramid.
+
+        Sync indicates wether to build a synced peak on top of the pyramid.
         """
         self.lock()
 
@@ -568,16 +541,11 @@ class Pyramid(object):
 
             # To aggregate or not
             if tile.level == previous_level + 1:
-                sources = children[previous_level]
+                while children[previous_level]:
+                    rasters.reproject(children[previous_level].pop(), target)
             else:
-                sources = [dataset]
-            for source in sources:
-                rasters.reproject(source, target)
+                rasters.reproject(dataset, target)
             target = None  # Writes the header
-
-            # Remove children just used
-            if tile.level == previous_level + 1:
-                del children[previous_level]
 
             children[tile.level].append(self.get_dataset(tile))
             previous_level = tile.level
@@ -593,10 +561,40 @@ class Pyramid(object):
             hi = self.get_promoted(tile=hi, info=info)
 
         # Update peak
-        if 'peak' in info:
-            self.update_peak(tile=hi, info=info)
+        if sync:
+            self.sync()
 
         self.unlock()
+
+    def sync(self):
+        """
+        Update a peak pyramid.
+
+        Pyramids with large tilesizes warp slow at high zoomlevels. The
+        use of a peak pyramid with a small tilesize on top of the main
+        pyramid solves that.
+        """
+        path = os.path.join(self.path, self.PEAK)
+        info = self.info
+        if os.path.exists(path):
+            shutil.rmtree(path)
+        peak = Pyramid(path)
+        dataset = self.get_dataset(info['top_tile'])
+
+        # Base of peak is one higher than tile
+        base = MEM.Create('',
+                          info['tilesize'][0] // 2,
+                          info['tilesize'][1] // 2,
+                          1,
+                          info['datatype'])
+        base.SetProjection(info['projection'])
+        base.GetRasterBand(1).SetNoDataValue(info['nodatavalue'])
+        base.SetGeoTransform(
+            scale_geotransform(dataset.GetGeoTransform(), 2),
+        )
+        base.GetRasterBand(1).Fill(info['nodatavalue'])
+        rasters.reproject(dataset, base)
+        peak.add(base, sync=False, blocksize=(256, 256), tilesize=(256, 256))
 
     def warpinto(self, dataset):
         """ Warp data from the pyramid into dataset. """
@@ -608,6 +606,7 @@ class Pyramid(object):
         # get bounds in pyramids projection
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
         level = max(info['min_level'], get_level(bounds['pixel']))
+        logger.warn(level)
 
         # warp from peak if appropriate
         if level > info['max_level'] and 'peak' in info:
