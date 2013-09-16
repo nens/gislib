@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.1.2 (unreleased)
+0.1.2 (2013-09-16)
 ------------------
 
 - New pyramid class added that supports repeated additions and more.
