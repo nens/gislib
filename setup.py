@@ -40,6 +40,6 @@ setup(name='gislib',
       entry_points={
           'console_scripts': [
               'pyramid = gislib.scripts.pyramid:main',
-              'store = gislib.scripts.store:main',
+              'juggle = gislib.scripts.juggle:main',
           ]},
       )
