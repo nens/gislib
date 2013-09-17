@@ -606,7 +606,6 @@ class Pyramid(object):
         # get bounds in pyramids projection
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
         level = max(info['min_level'], get_level(bounds['pixel']))
-        logger.warn(level)
 
         # warp from peak if appropriate
         if level > info['max_level'] and 'peak' in info:
