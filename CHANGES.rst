@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.1.3 (unreleased)
+0.1.3 (2013-09-17)
 ------------------
 
 - Fix abs bug. Boundaries are now correctly calculated.
