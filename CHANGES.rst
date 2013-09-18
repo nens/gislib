@@ -2,8 +2,8 @@ Changelog of gislib
 ===================================================
 
 
-0.1.5 (unreleased)
-------------------
+0.2 (2013-09-18)
+----------------
 
 - Add convenience method for authorities and start using SetFromUserInput.
   Integers are no longer accepted as argument for get_spatial_reference.
