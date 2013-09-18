@@ -39,12 +39,6 @@ def dataset2outlinepolygon(dataset):
     """ Return polygon formed by pixel edges. """
     nx, ny = dataset.RasterXSize, dataset.RasterYSize
     npoints = 2 * (nx + ny) + 1
-    # Construct a wkb array for speed
-    #nbytes = 13 + 16 * npoints
-    #data = np.empty(nbytes, dtype=np.uint8)
-    #data[0:1] = 1  # little endian
-    ## wkb type, number of rings, number of points
-    #data[1:13].view(np.uint32)[:] = [3, 1, npoints]
     array = np.empty((npoints, 2))
 
     # Construct pixel indices arrays
@@ -381,9 +375,23 @@ class Pyramid(object):
 
     @property
     def extent(self):
-        return self.info['top_tile'].extent
-        """ Return the extent of peaks top tile. """
-        return None
+        """ Return the extent of the datapart in peaks top tile. """
+        peak = self.infocache['peak']
+        dataset = peak.get_dataset(peak.infocache['top_tile'])
+
+        # Return geotransform as matrices
+        geotransform = np.array(dataset.GetGeoTransform())
+        matrix = geotransform[[1, 2, 4, 5]].reshape(2, 2)
+        offset = geotransform[[0, 3]].reshape(2, 1)
+
+        # Determine the pixels that are not nodata
+        array = dataset.GetRasterBand(1).GetMaskBand().ReadAsArray()
+        pixels = np.array(tuple((i.min(), i.max() + 1)
+                          for i in array.nonzero()))[::-1]
+
+        # Return as extent
+        (x1, x2), (y2, y1) = np.dot(matrix, pixels) + offset
+        return x1, y1, x2, y2
 
     # =========================================================================
     # Locking
