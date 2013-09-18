@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.1.4 (unreleased)
+0.1.4 (2013-09-18)
 ------------------
 
 - Add juggle script to multiprocessed calculate hillshades and others.
