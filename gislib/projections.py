@@ -6,8 +6,6 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
-import string
-
 from osgeo import osr
 
 
@@ -16,7 +14,7 @@ osr.UseExceptions()
 
 
 # Projections and transformations
-GOOGLE = 3857  # And not 900913!!! Gdal does not understand it.
+GOOGLE = 'EPSG:3857'  # And not 900913!!! Gdal does not understand it.
 RD = ("+proj=sterea +lat_0=52.15616055555555 +lon_0=5.38763888888889 "
       "+k=0.999908 +x_0=155000 +y_0=463000 +ellps=bessel "
       "+towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812 "
@@ -41,17 +39,8 @@ def get_spatial_reference(projection):
     sr = osr.SpatialReference()
     if projection is None or projection == '':
         return get_spatial_reference(default_projection)
-    elif isinstance(projection, int):
-        sr.ImportFromEPSG(projection)
-    elif isinstance(projection, (str, unicode)):
-        if projection.startswith('+proj='):
-            sr.ImportFromProj4(str(projection))
-        elif projection.lower().startswith('epsg:'):
-            sr.ImportFromEPSG(int(projection.split(':')[1]))
-        elif projection[0] in string.digits:
-            sr.ImportFromEPSG(int(projection))
-        else:
-            sr.ImportFromWkt(str(projection))
+    else:
+        sr.SetFromUserInput(str(projection))
     return sr
 
 
@@ -63,3 +52,10 @@ def get_wkt(projection):
 def get_proj4(projection):
     """ Convenience function. """
     return get_spatial_reference(projection).ExportToProj4()
+
+
+def get_authority(projection):
+    """ Convenience function. """
+    sr = get_spatial_reference(projection)
+    return '{}:{}'.format(sr.GetAttrValue(b"AUTHORITY", 0),
+                          sr.GetAttrValue(b"AUTHORITY", 1))
