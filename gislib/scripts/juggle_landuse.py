@@ -7,12 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 
 import gdal
-import io
-import numpy as np
-import requests
 import sys
 
-from PIL import Image
 from matplotlib import colors
 
 COLORMAP = colors.ListedColormap([

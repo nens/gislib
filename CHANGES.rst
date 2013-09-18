@@ -5,7 +5,9 @@ Changelog of gislib
 0.1.4 (unreleased)
 ------------------
 
-- Add juggle script to multiprocessed calculate hillshades and others
+- Add juggle script to multiprocessed calculate hillshades and others.
+
+- More accurate extent for pyramids.
 
 
 0.1.3 (2013-09-17)
