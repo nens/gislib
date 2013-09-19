@@ -123,9 +123,9 @@ class MagicLine(object):
         # Loop dimensions for intersection parameters
         for i in range(extent.shape[-1]):
             intersects = np.arange(
-                size * np.ceil(extent[0, i] / size),
-                size * np.ceil(extent[1, i] / size),
-                size,
+                size[i] * np.ceil(extent[0, i] / size[i]),
+                size[i] * np.ceil(extent[1, i] / size[i]),
+                size[i],
             ).reshape(-1, 1)
             # Calculate intersection parameters for each vector
             nonzero = self.vectors[:, i].nonzero()

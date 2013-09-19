@@ -15,6 +15,7 @@ import time
 import shutil
 
 from osgeo import gdal
+from osgeo import gdal_array
 from osgeo import ogr
 from osgeo import osr
 
@@ -628,3 +629,69 @@ class Pyramid(object):
                               extent=geometry2envelopeextent(bounds['raster']))
         for source in self.get_datasets(tiles):
             rasters.reproject(source, dataset)
+
+
+class MultiPyramid(object):
+    """ Pyramid wrapper for data extraction from a list of pyramids. """
+    def __init__(self, pyramids):
+        self.pyramids = pyramids
+
+    def get_array(self, extent, size, projection):
+        """ 
+        Return data for the pyramids.
+        
+        Datatype and nodatavalue are taken from first pyramid.
+        """
+        info = self.pyramids[0].infocache
+
+        # Create a dataset
+        array = np.ones(
+            (
+                1,
+                size[0],
+                size[1],
+            ),
+            dtype=gdal_array.flip_code(info['datatype']),
+        ) * info['nodatavalue']
+        dataset = rasters.array2dataset(array)
+
+        # Add georeferencing
+        xmin, ymin, xmax, ymax = extent
+        geotransform = (xmin, (xmax - xmin) / array.shape[-1], 0,
+                        ymax, 0, (ymin - ymax) / array.shape[-2])
+        dataset.SetProjection(projections.get_wkt(projection))
+        dataset.SetGeoTransform(geotransform)
+
+        # Get data
+        for pyramid in self.pyramids:
+            pyramid.warpinto(dataset)
+        dataset.FlushCache()
+
+        return np.ma.masked_equal(array, info['nodatavalue'], copy=False)
+        
+    def get_profile(self, line, size, projection):
+        """ Get a profile based on line. """
+        # Convenience and readability
+        extent = geometry2envelopeextent(line)
+        xmin, xmax, ymin, ymax = extent
+        width, height = size
+        
+        # Determine indices for one point per pixel on the line
+        vertices = line.GetPoints()
+        cellsize = np.array([(xmax - xmin) / width, (ymin - ymax) / height])
+        magicline = vectors.MagicLine(vertices).pixelize(np.abs(cellsize))
+        origin = np.array((xmin, ymax))
+        points = magicline.centers
+        indices = tuple(np.uint64((magicline.centers - origin) / cellsize,
+                                  ).transpose())[::-1]
+        
+        # Get the values from the array
+        array = self.get_array(extent, size, projection)
+        values = array[0][indices]
+
+        # make array with distance from origin (x values for graph)
+        magnitudes = vectors.magnitude(magicline.vectors)
+        distances = magnitudes - magnitudes[0] / 2
+        profile_data = [list(a) for a in zip(distances, values)]
+        
+        return profile_data
