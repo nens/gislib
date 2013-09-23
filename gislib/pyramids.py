@@ -23,6 +23,7 @@ import numpy as np
 
 from gislib import projections
 from gislib import rasters
+from gislib import stores
 from gislib import vectors
 
 gdal.UseExceptions()
@@ -302,7 +303,7 @@ class Tile(object):
         return extent2polygon(*self.extent)
 
 
-class Pyramid(object):
+class Pyramid(stores.BaseStore):
     """
     Pyramid datastore.
     """
@@ -330,7 +331,7 @@ class Pyramid(object):
         ]
 
     @property
-    def info(self):
+    def actualinfo(self):
         """
         Return info dictionary or None if empty pyramid.
         """
@@ -368,17 +369,17 @@ class Pyramid(object):
         return info
 
     @property
-    def infocache(self):
+    def info(self):
         now = time.time()
         if not hasattr(self, '_info') or now - self._info['time'] > TIMEOUT:
-            self._info = dict(time=now, info=self.info)
+            self._info = dict(time=now, info=self.actualinfo)
         return self._info['info']
 
     @property
     def extent(self):
         """ Return the extent of the datapart in peaks top tile. """
-        peak = self.infocache['peak']
-        dataset = peak.get_dataset(peak.infocache['top_tile'])
+        peak = self.info['peak']
+        dataset = peak.get_dataset(peak.info['top_tile'])
 
         # Return geotransform as matrices
         geotransform = np.array(dataset.GetGeoTransform())
@@ -517,7 +518,7 @@ class Pyramid(object):
             return self.unlock()
 
         # use pyramid info if possible, otherwise use dataset and kwargs
-        info = self.info
+        info = self.actualinfo
         if info is None:
             info = get_info(dataset)
             info.update(kwargs)
@@ -584,7 +585,7 @@ class Pyramid(object):
         pyramid solves that.
         """
         path = os.path.join(self.path, self.PEAK)
-        info = self.info
+        info = self.actualinfo
         if os.path.exists(path):
             shutil.rmtree(path)
         peak = Pyramid(path)
@@ -608,7 +609,7 @@ class Pyramid(object):
     def warpinto(self, dataset):
         """ Warp data from the pyramid into dataset. """
         # if no pyramid info, pyramid is empty.
-        info = self.infocache
+        info = self.info
         if info is None:
             return
 
@@ -629,96 +630,3 @@ class Pyramid(object):
                               extent=geometry2envelopeextent(bounds['raster']))
         for source in self.get_datasets(tiles):
             rasters.reproject(source, dataset)
-
-
-class MultiPyramid(object):
-    """ Pyramid wrapper for data extraction from a list of pyramids. """
-    def __init__(self, pyramids):
-        self.pyramids = pyramids
-
-    def get_array(self, extent, size, projection):
-        """
-        Return data for the pyramids.
-
-        Datatype and nodatavalue are taken from first pyramid.
-
-        extent: xmin, xmax, ymin, ymax-tuple
-        size: width, height-tuple
-        projection: something like 'epsg:28992' or a wkt or proj4 string.
-        """
-        info = self.pyramids[0].infocache
-
-        # Create a dataset
-        array = np.ones(
-            (
-                1,
-                size[1],
-                size[0],
-            ),
-            dtype=gdal_array.flip_code(info['datatype']),
-        ) * info['nodatavalue']
-        dataset = rasters.array2dataset(array)
-
-        # Add georeferencing
-        xmin, ymin, xmax, ymax = extent
-        geotransform = (xmin, (xmax - xmin) / array.shape[-1], 0,
-                        ymax, 0, (ymin - ymax) / array.shape[-2])
-        dataset.SetProjection(projections.get_wkt(projection))
-        dataset.SetGeoTransform(geotransform)
-
-        # Get data
-        for pyramid in self.pyramids:
-            pyramid.warpinto(dataset)
-        dataset.FlushCache()
-
-        return np.ma.masked_equal(array, info['nodatavalue'], copy=False)
-
-    def get_profile(self, line, size, projection):
-        """
-        Return a distances, values tuple of numpy arrays.
-
-        line: ogr.wkbLineString
-        size: integer
-        projection: something like 'epsg:28992' or a wkt or proj4 string.
-        """
-        # Buffer line with 1 percent of length to keep bbox a polygon
-        extent = geometry2envelopeextent(line.Buffer(line.Length() / 100))
-        x1, y1, x2, y2 = extent
-        span = x2 - x1, y2 - y1
-
-        # Determine width, height and cellsize
-        if max(span) == span[0]:
-            width = size
-            cellsize = span[0] / size
-            height = int(math.ceil(span[1] / cellsize))
-        else:
-            height = size
-            cellsize = span[1] / size
-            width = int(math.ceil(span[0] / cellsize))
-
-        # Determine indices for one point per pixel on the line
-        vertices = line.GetPoints()
-        magicline = vectors.MagicLine(vertices).pixelize(cellsize)
-        origin = np.array([x1, y2])
-        points = magicline.centers
-        indices = tuple(np.uint64(
-            (points - origin) / cellsize * np.array([1, -1]),
-        ).transpose())[::-1]
-
-        # Get the values from the array
-        array = self.get_array(extent, (width, height), projection)
-        values = array[0][indices]
-
-        # make array with distance from origin (x values for graph)
-        magnitudes = vectors.magnitude(magicline.vectors)
-        distances = magnitudes.cumsum() - magnitudes[0] / 2
-
-        return distances, values
-
-    def get_point(self, point, projection):
-        """ Return point """
-        for pyramid in self.pyramids:
-            pass
-            # Transform point to pyramid projection
-            # Using pyramids min_level, create a bbox of one pixels size.
-            # Use get_array to retrieve the data.
