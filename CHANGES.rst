@@ -2,8 +2,8 @@ Changelog of gislib
 ===================================================
 
 
-0.3 (unreleased)
-----------------
+0.2.1 (2013-09-23)
+------------------
 
 - Implement get_profile for pyramids wrapper.
 
