@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.2 (unreleased)
+0.2.2 (2013-09-23)
 ------------------
 
 - Make get_array() and get_profile() directly accessible from pyramid objects.
