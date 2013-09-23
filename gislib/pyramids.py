@@ -637,10 +637,14 @@ class MultiPyramid(object):
         self.pyramids = pyramids
 
     def get_array(self, extent, size, projection):
-        """ 
+        """
         Return data for the pyramids.
-        
+
         Datatype and nodatavalue are taken from first pyramid.
+
+        extent: xmin, xmax, ymin, ymax-tuple
+        size: width, height-tuple
+        projection: something like 'epsg:28992' or a wkt or proj4 string.
         """
         info = self.pyramids[0].infocache
 
@@ -648,8 +652,8 @@ class MultiPyramid(object):
         array = np.ones(
             (
                 1,
-                size[0],
                 size[1],
+                size[0],
             ),
             dtype=gdal_array.flip_code(info['datatype']),
         ) * info['nodatavalue']
@@ -668,30 +672,53 @@ class MultiPyramid(object):
         dataset.FlushCache()
 
         return np.ma.masked_equal(array, info['nodatavalue'], copy=False)
-        
+
     def get_profile(self, line, size, projection):
-        """ Get a profile based on line. """
-        # Convenience and readability
-        extent = geometry2envelopeextent(line)
-        xmin, xmax, ymin, ymax = extent
-        width, height = size
-        
+        """
+        Return a distances, values tuple of numpy arrays.
+
+        line: ogr.wkbLineString
+        size: integer
+        projection: something like 'epsg:28992' or a wkt or proj4 string.
+        """
+        # Buffer line with 1 percent of length to keep bbox a polygon
+        extent = geometry2envelopeextent(line.Buffer(line.Length() / 100))
+        x1, y1, x2, y2 = extent
+        span = x2 - x1, y2 - y1
+
+        # Determine width, height and cellsize
+        if max(span) == span[0]:
+            width = size
+            cellsize = span[0] / size
+            height = int(math.ceil(span[1] / cellsize))
+        else:
+            height = size
+            cellsize = span[1] / size
+            width = int(math.ceil(span[0] / cellsize))
+
         # Determine indices for one point per pixel on the line
         vertices = line.GetPoints()
-        cellsize = np.array([(xmax - xmin) / width, (ymin - ymax) / height])
-        magicline = vectors.MagicLine(vertices).pixelize(np.abs(cellsize))
-        origin = np.array((xmin, ymax))
+        magicline = vectors.MagicLine(vertices).pixelize(cellsize)
+        origin = np.array([x1, y2])
         points = magicline.centers
-        indices = tuple(np.uint64((magicline.centers - origin) / cellsize,
-                                  ).transpose())[::-1]
-        
+        indices = tuple(np.uint64(
+            (points - origin) / cellsize * np.array([1, -1]),
+        ).transpose())[::-1]
+
         # Get the values from the array
-        array = self.get_array(extent, size, projection)
+        array = self.get_array(extent, (width, height), projection)
         values = array[0][indices]
 
         # make array with distance from origin (x values for graph)
         magnitudes = vectors.magnitude(magicline.vectors)
-        distances = magnitudes - magnitudes[0] / 2
-        profile_data = [list(a) for a in zip(distances, values)]
-        
-        return profile_data
+        distances = magnitudes.cumsum() - magnitudes[0] / 2
+
+        return distances, values
+
+    def get_point(self, point, projection):
+        """ Return point """
+        for pyramid in self.pyramids:
+            pass
+            # Transform point to pyramid projection
+            # Using pyramids min_level, create a bbox of one pixels size.
+            # Use get_array to retrieve the data.

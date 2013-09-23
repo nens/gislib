@@ -5,7 +5,9 @@ Changelog of gislib
 0.3 (unreleased)
 ----------------
 
-- Nothing changed yet.
+- Implement get_profile for pyramids wrapper.
+
+- Make it possible for pixelize to use non-square pixels.
 
 
 0.2 (2013-09-18)

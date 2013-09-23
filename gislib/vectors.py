@@ -119,6 +119,7 @@ class MagicLine(object):
         Return array of parameters where pixel boundary intersects self.
         """
         extent = np.array([self.points.min(0), self.points.max(0)])
+        size = np.array([1, 1]) * size  # Coerce scalar size
         parameters = []
         # Loop dimensions for intersection parameters
         for i in range(extent.shape[-1]):
