@@ -48,3 +48,15 @@ def get_extent_intersection(extent1, extent2):
             max(extent1[1], extent2[1]),
             min(extent1[2], extent2[2]),
             min(extent1[3], extent2[3]))
+
+
+def geometry2envelopepoints(geometry):
+    """ Return array. """
+    return np.array(geometry.GetEnvelope()).reshape(2, 2).transpose()
+
+
+def geometry2envelopeextent(geometry):
+    """ Return extent. """
+    return tuple(geometry2envelopepoints(geometry).ravel())
+
+

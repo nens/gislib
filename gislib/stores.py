@@ -23,6 +23,7 @@ import numpy as np
 
 from gislib import projections
 from gislib import rasters
+from gislib import utils
 from gislib import vectors
 
 
@@ -74,7 +75,9 @@ class BaseStore(object):
         projection: something like 'epsg:28992' or a wkt or proj4 string.
         """
         # Buffer line with 1 percent of length to keep bbox a polygon
-        extent = geometry2envelopeextent(line.Buffer(line.Length() / 100))
+        extent = utils.geometry2envelopeextent(
+            line.Buffer(line.Length() / 100)
+        )
         x1, y1, x2, y2 = extent
         span = x2 - x1, y2 - y1
 

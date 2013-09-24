@@ -24,6 +24,7 @@ import numpy as np
 from gislib import projections
 from gislib import rasters
 from gislib import stores
+from gislib import utils
 from gislib import vectors
 
 gdal.UseExceptions()
@@ -94,16 +95,6 @@ def extent2polygon(xmin, ymin, xmax, ymax):
     return vectors.points2polygon(points)
 
 
-def geometry2envelopepoints(geometry):
-    """ Return array. """
-    return np.array(geometry.GetEnvelope()).reshape(2, 2).transpose()
-
-
-def geometry2envelopeextent(geometry):
-    """ Return extent. """
-    return tuple(geometry2envelopepoints(geometry).ravel())
-
-
 def geometry2envelopesize(geometry):
     """ Return size tuple. """
     xmin, xmax, ymin, ymax = geometry.GetEnvelope()
@@ -150,8 +141,8 @@ def get_bounds(dataset, projection):
 
     # verdict
     pixel_trf_size = geometry2envelopesize(pixel_trf)
-    diff = np.abs(geometry2envelopepoints(raster_trf) -
-                  geometry2envelopepoints(raster_org))
+    diff = np.abs(utils.geometry2envelopepoints(raster_trf) -
+                  utils.geometry2envelopepoints(raster_org))
     transform = (100 * diff > pixel_trf_size).any()
 
     # return
@@ -625,8 +616,10 @@ class Pyramid(stores.BaseStore):
         if level >= info['max_level']:
             tiles = info['top_tile'],
         else:
-            tiles = get_tiles(tilesize=info['tilesize'],
-                              level=level,
-                              extent=geometry2envelopeextent(bounds['raster']))
+            tiles = get_tiles(
+                tilesize=info['tilesize'],
+                level=level,
+                extent=utils.geometry2envelopeextent(bounds['raster']),
+            )
         for source in self.get_datasets(tiles):
             rasters.reproject(source, dataset)
