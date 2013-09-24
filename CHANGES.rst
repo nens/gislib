@@ -5,7 +5,7 @@ Changelog of gislib
 0.2.3 (unreleased)
 ------------------
 
-- Nothing changed yet.
+- Fix for the get_profile.
 
 
 0.2.2 (2013-09-23)
