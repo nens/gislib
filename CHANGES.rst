@@ -5,7 +5,7 @@ Changelog of gislib
 0.2.4 (unreleased)
 ------------------
 
-- Nothing changed yet.
+- Get_profile now accepts a wkt.
 
 
 0.2.3 (2013-09-24)
