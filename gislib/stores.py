@@ -70,11 +70,12 @@ class BaseStore(object):
         """
         Return a distances, values tuple of numpy arrays.
 
-        line: ogr.wkbLineString
+        line: wkt of a linestring
         size: integer
         projection: something like 'epsg:28992' or a wkt or proj4 string.
         """
         # Buffer line with 1 percent of length to keep bbox a polygon
+        line = ogr.CreateGeometryFromWkt(line)
         extent = utils.geometry2envelopeextent(
             line.Buffer(line.Length() / 100)
         )
