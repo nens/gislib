@@ -280,7 +280,7 @@ class Tile(object):
     @property
     def polygon(self):
         """ Return extent geometry. """
-        return utils.extent2polygon(*self.extent)
+        return utils.extent2polygon(self.extent)
 
 
 class Pyramid(stores.BaseStore):

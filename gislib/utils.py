@@ -16,8 +16,9 @@ from gislib import vectors
 gdal.UseExceptions()
 
 
-def extent2polygon(xmin, ymin, xmax, ymax):
+def extent2polygon(extent):
     """ Return an extent polygon. """
+    xmin, ymin, xmax, ymax = extent
     points = ((xmin, ymin),
               (xmax, ymin),
               (xmax, ymax),
