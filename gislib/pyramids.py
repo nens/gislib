@@ -15,7 +15,6 @@ import time
 import shutil
 
 from osgeo import gdal
-from osgeo import gdal_array
 from osgeo import ogr
 from osgeo import osr
 
@@ -82,16 +81,6 @@ def dataset2pixelpolygon(dataset):
               (xul + dxx + dxy, yul + dyx + dyy),
               (xul + dxy, yul + dyy),
               (xul, yul))
-    return vectors.points2polygon(points)
-
-
-def extent2polygon(xmin, ymin, xmax, ymax):
-    """ Return an extent polygon. """
-    points = ((xmin, ymin),
-              (xmax, ymin),
-              (xmax, ymax),
-              (xmin, ymax),
-              (xmin, ymin))
     return vectors.points2polygon(points)
 
 
@@ -291,7 +280,7 @@ class Tile(object):
     @property
     def polygon(self):
         """ Return extent geometry. """
-        return extent2polygon(*self.extent)
+        return utils.extent2polygon(*self.extent)
 
 
 class Pyramid(stores.BaseStore):

@@ -5,7 +5,9 @@ Changelog of gislib
 0.2.5 (unreleased)
 ------------------
 
-- Nothing changed yet.
+- Move extent2polygon to utils
+
+- Rewrite get_transformed_extent
 
 
 0.2.4 (2013-09-24)
