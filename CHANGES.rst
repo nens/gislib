@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.6 (unreleased)
+0.2.6 (2013-09-25)
 ------------------
 
 - Fix error in extent2polygon.
