@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.5 (unreleased)
+0.2.5 (2013-09-25)
 ------------------
 
 - Move extent2polygon to utils
