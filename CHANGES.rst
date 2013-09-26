@@ -5,7 +5,13 @@ Changelog of gislib
 0.2.7 (unreleased)
 ------------------
 
-- Nothing changed yet.
+- Add a script to round gdal datasets.
+
+- Log the tilepath on exceptions during pyramid add
+
+- Log the sourcepath on exceptions during pyramid add
+
+- Do not raise, but always add to pyramid baselevel, regardless of source resolution
 
 
 0.2.6 (2013-09-25)

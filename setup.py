@@ -41,5 +41,6 @@ setup(name='gislib',
           'console_scripts': [
               'pyramid = gislib.scripts.pyramid:main',
               'juggle = gislib.scripts.juggle:main',
+              'round = gislib.scripts.round:main',
           ]},
       )

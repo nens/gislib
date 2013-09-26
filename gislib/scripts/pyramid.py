@@ -20,7 +20,6 @@ description = """
 Commandline tool for working with gislib pyramids.
 """
 
-logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -68,12 +67,16 @@ def pyramid(targetpath, sourcepaths, blocksize,
 
     for i, sourcepath in enumerate(sourcepaths):
         dataset = gdal.Open(sourcepath)
-        pyramid.add(dataset, sync=False, **kwargs)
+        try:
+            pyramid.add(dataset, sync=False, **kwargs)
+        except RuntimeError as error:
+            logger.error('Current soure: {}'.format(sourcepath))
+            raise error
         indicator.update()
     pyramid.sync()
 
 
-
 def main():
     """ Call command with args from parser. """
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO)
     pyramid(**vars(get_parser().parse_args()))

@@ -238,10 +238,6 @@ class LockError(Exception):
     pass
 
 
-class LevelError(Exception):
-    pass
-
-
 class Tile(object):
     def __init__(self, size, level, indices):
         """ x, y, and t refer to block indices. """
@@ -509,9 +505,7 @@ class Pyramid(stores.BaseStore):
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
 
         # derive baselevel
-        min_level = get_level(bounds['pixel'])
-        if min_level != info.get('min_level', min_level):
-            raise LevelError('Incompatible resolution.')
+        min_level = info.get('min_level', get_level(bounds['pixel']))
 
         # find new top tile
         top_tile = get_top_tile(geometry=bounds['raster'],
@@ -530,11 +524,17 @@ class Pyramid(stores.BaseStore):
             target = self.get_dataset(tile=tile, info=info)
 
             # To aggregate or not
-            if tile.level == previous_level + 1:
-                while children[previous_level]:
-                    rasters.reproject(children[previous_level].pop(), target)
-            else:
-                rasters.reproject(dataset, target)
+            try:
+                if tile.level == previous_level + 1:
+                    while children[previous_level]:
+                        rasters.reproject(
+                            children[previous_level].pop(), target
+                        )
+                else:
+                    rasters.reproject(dataset, target)
+            except RuntimeError as error:
+                logger.error('Current tile: {}'.format(tile.path))
+                raise error
             target = None  # Writes the header
 
             children[tile.level].append(self.get_dataset(tile))
