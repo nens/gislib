@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.7 (unreleased)
+0.2.7 (2013-09-26)
 ------------------
 
 - Add a script to round gdal datasets.
