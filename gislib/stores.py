@@ -15,7 +15,6 @@ import numpy as np
 
 from gislib import projections
 from gislib import rasters
-from gislib import utils
 from gislib import vectors
 
 OGR_MEM_DRIVER = ogr.GetDriverByName(b'Memory')
@@ -25,51 +24,6 @@ class BaseStore(object):
     """
     Base class for anything that has a warpinto method.
     """
-    def get_profile(self, line, size, projection):
-        """
-        Return a distances, values tuple of numpy arrays.
-
-        line: wkt of a linestring
-        size: integer
-        projection: something like 'epsg:28992' or a wkt or proj4 string.
-        """
-        # Buffer line with 1 percent of length to keep bbox a polygon
-        line = ogr.CreateGeometryFromWkt(line)
-        extent = utils.geometry2envelopeextent(
-            line.Buffer(line.Length() / 100)
-        )
-        x1, y1, x2, y2 = extent
-        span = x2 - x1, y2 - y1
-
-        # Determine width, height and cellsize
-        if max(span) == span[0]:
-            width = size
-            cellsize = span[0] / size
-            height = int(math.ceil(span[1] / cellsize))
-        else:
-            height = size
-            cellsize = span[1] / size
-            width = int(math.ceil(span[0] / cellsize))
-
-        # Determine indices for one point per pixel on the line
-        vertices = line.GetPoints()
-        magicline = vectors.MagicLine(vertices).pixelize(cellsize)
-        origin = np.array([x1, y2])
-        points = magicline.centers
-        indices = tuple(np.uint64(
-            (points - origin) / cellsize * np.array([1, -1]),
-        ).transpose())[::-1]
-
-        # Get the values from the array
-        array = self.get_array(extent, (width, height), crs=projection)
-        values = array[0][indices]
-
-        # make array with distance from origin (x values for graph)
-        magnitudes = vectors.magnitude(magicline.vectors)
-        distances = magnitudes.cumsum() - magnitudes[0] / 2
-
-        return distances, values
-
     def get_data(self, wkt, crs, size=None):
         """
         Generalized data extraction from store interfaces.
@@ -116,32 +70,39 @@ class BaseStore(object):
         return np.ma.masked_equal(array, nodatavalue, copy=False)
 
     def get_data_for_linestring(self, wkb, crs, size):
-        """ What the name says. """ 
-        segmentsize = wkb.Length() / size
-        geometry = vectors.Geometry(wkb)
+        """ Profile code. """
+        # Consider an envelope slightly larger than the lines envelope.
+        length = wkb.Length()
+        geometry = vectors.Geometry(wkb.Buffer(length / 100))
+        envelope = geometry.envelope
+        extent = geometry.extent
         span = geometry.size
 
-        # Cellsize must be such that it fits integer amount in extent
-        cellsize = np.array(tuple(s / (s // segmentsize) for s in span))
-        
-        # Segmentize and extract the points
-        wkb.Segmentize(segmentsize)
-        points = np.fromstring(wkb.ExportToWkb()[9:]).byteswap().reshape(-1, 2)
-        
-        # Get 2D data
-        envelope = geometry.envelope
-        datasize = tuple(int(s / c) for s, c in zip(span, cellsize))
-        data = self.get_data_for_polygon(crs=crs, wkb=envelope, size=datasize)
+        # Now, based on size and span, determine optimal dataset layout.
+        cellsize = length / size
+        gridsize = tuple(int(math.ceil(s / cellsize)) for s in span)
+        x1, y1, x2, y2 = extent
 
-        # Extract 1D data
-        x1, y1, x2, y2 = geometry.extent
+        # Determine indices for one point per pixel on the line
+        wkbpoints = wkb.ExportToWkb()[9:]
+        vertices = np.fromstring(wkbpoints).byteswap().reshape(-1, 2)
+        magicline = vectors.MagicLine(vertices).pixelize(cellsize)
         origin = np.array([x1, y2])
-        indices = tuple(np.minimum(
-            np.uint64((points - origin) / cellsize * np.array([1, -1])),
-            np.uint64(datasize) - 1,
+        points = magicline.centers
+        indices = tuple(np.uint64(
+            (points - origin) / cellsize * np.array([1, -1]),
         ).transpose())[::-1]
 
-        return data[0][indices]
+        # Get the values from the array
+        values = self.get_data_for_polygon(crs=crs,
+                                           wkb=envelope,
+                                           size=gridsize)[0][indices]
+
+        # make array with distance from origin (x values for graph)
+        magnitudes = vectors.magnitude(magicline.vectors)
+        distances = magnitudes.cumsum() - magnitudes[0] / 2
+
+        return distances, values
 
     def get_data_for_point(self, wkb, crs, size):
         pass

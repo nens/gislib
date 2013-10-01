@@ -5,7 +5,7 @@ Changelog of gislib
 0.2.8 (unreleased)
 ------------------
 
-- Implement generic store data retrieval for geomtries
+- Implement generic store data retrieval for geometries
 
 
 0.2.7 (2013-09-26)
