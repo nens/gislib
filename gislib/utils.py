@@ -16,27 +16,6 @@ from gislib import vectors
 gdal.UseExceptions()
 
 
-def extent2polygon(extent):
-    """ Return an extent polygon. """
-    xmin, ymin, xmax, ymax = extent
-    points = ((xmin, ymin),
-              (xmax, ymin),
-              (xmax, ymax),
-              (xmin, ymax),
-              (xmin, ymin))
-    return vectors.points2polygon(points)
-
-
-def geometry2envelopepoints(geometry):
-    """ Return array. """
-    return np.array(geometry.GetEnvelope()).reshape(2, 2).transpose()
-
-
-def geometry2envelopeextent(geometry):
-    """ Return extent. """
-    return tuple(geometry2envelopepoints(geometry).ravel())
-
-
 def get_extent_intersection(extent1, extent2):
     """ Return the intersecting extent. """
     return (max(extent1[0], extent2[0]),

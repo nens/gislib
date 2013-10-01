@@ -44,17 +44,6 @@ def points2polygon(points):
     return polygon
 
 
-def geometry2polygon(geometry):
-    """ Return the rectangular polygon of geometry's envelope. """
-    xmin, xmax, ymin, ymax = geometry.GetEnvelope()
-    points = ((xmin, ymin),
-              (xmax, ymin),
-              (xmax, ymax),
-              (xmin, ymax),
-              (xmin, ymin))
-    return points2polygon(points)
-
-
 def point2geometry(point):
     """ Return geometry. """
     geometry = ogr.Geometry(ogr.wkbPoint)
@@ -88,6 +77,31 @@ def rotate(vectors, degrees):
         +np.sin(np.radians(degrees)) * vectors[:, 0] +
         +np.cos(np.radians(degrees)) * vectors[:, 1],
     ]).transpose()
+
+
+class Geometry(object):
+    """ Wrapper around ogr geometry for working with extents. """
+    def __init__(self, geometry):
+        self.geometry = geometry
+
+    @property
+    def extent(self):
+        """ Return x1, y1, x2, y2. """
+        x1, x2, y1, y2 = self.geometry.GetEnvelope()
+        return x1, y1, x2, y2
+
+    @property
+    def envelope(self):
+        """ Return polygon representing envelope. """
+        x1, x2, y1, y2 = self.geometry.GetEnvelope()
+        points = (x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)
+        return points2polygon(points)
+
+    @property
+    def size(self):
+        """ Return width, height. """
+        x1, x2, y1, y2 = self.geometry.GetEnvelope()
+        return x2 - x1, y2 - y1
 
 
 class MagicLine(object):

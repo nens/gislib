@@ -22,7 +22,7 @@ gdal.UseExceptions()
 osr.UseExceptions()
 
 
-def array2dataset(array):
+def array2dataset(array, extent, crs):
     """
     Return gdal dataset.
 
@@ -31,6 +31,7 @@ def array2dataset(array):
     occur. Also, don't forget to call FlushCache() on the dataset after
     any operation that affects the array.
     """
+    # Prepare dataset name pointing to array
     datapointer = array.ctypes.data
     bands, lines, pixels = array.shape
     datatypecode = gdal_array.NumericTypeCodeToGDALTypeCode(array.dtype.type)
@@ -58,7 +59,17 @@ def array2dataset(array):
         lineoffset=lineoffset,
         bandoffset=bandoffset,
     )
-    return gdal.Open(dataset_name, gdal.GA_Update)
+    # Acces the array memory as gdal dataset
+    dataset = gdal.Open(dataset_name, gdal.GA_Update)
+    
+    # Add georeferencing based on extent and projection
+    x1, y1, x2, y2 = extent
+    geotransform = (x1, (x2 - x1) / array.shape[-1], 0,
+                    y2, 0, (y1 - y2) / array.shape[-2])
+    dataset.SetProjection(projections.get_wkt(crs))
+    dataset.SetGeoTransform(geotransform)
+
+    return dataset
 
 
 def reproject(source, target, algorithm=gdal.GRA_NearestNeighbour):

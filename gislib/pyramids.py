@@ -130,9 +130,10 @@ def get_bounds(dataset, projection):
 
     # verdict
     pixel_trf_size = geometry2envelopesize(pixel_trf)
-    diff = np.abs(utils.geometry2envelopepoints(raster_trf) -
-                  utils.geometry2envelopepoints(raster_org))
-    transform = (100 * diff > pixel_trf_size).any()
+    diff = max(map(lambda x, y: abs(x - y), 
+                   raster_trf.GetEnvelope(),
+                   raster_org.GetEnvelope()))
+    transform = 100 * diff > min(pixel_trf_size)
 
     # return
     if transform:
@@ -608,7 +609,7 @@ class Pyramid(stores.BaseStore):
             tiles = get_tiles(
                 tilesize=info['tilesize'],
                 level=level,
-                extent=utils.geometry2envelopeextent(bounds['raster']),
+                extent=vectors.Geometry(bounds['raster']).extent,
             )
         for source in self.get_datasets(tiles):
             rasters.reproject(source, dataset)
