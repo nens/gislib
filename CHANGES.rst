@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.8 (unreleased)
+0.2.8 (2013-10-07)
 ------------------
 
 - Fixed get_transformed_extent, added Geometry.fromextent.
