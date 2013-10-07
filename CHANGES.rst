@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.9 (unreleased)
+0.2.9 (2013-10-07)
 ------------------
 
 - Fix pyramid add (the new pyramid).
