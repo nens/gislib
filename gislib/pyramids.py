@@ -23,7 +23,6 @@ import numpy as np
 from gislib import projections
 from gislib import rasters
 from gislib import stores
-from gislib import utils
 from gislib import vectors
 
 gdal.UseExceptions()
@@ -130,7 +129,7 @@ def get_bounds(dataset, projection):
 
     # verdict
     pixel_trf_size = geometry2envelopesize(pixel_trf)
-    diff = max(map(lambda x, y: abs(x - y), 
+    diff = max(map(lambda x, y: abs(x - y),
                    raster_trf.GetEnvelope(),
                    raster_org.GetEnvelope()))
     transform = 100 * diff > min(pixel_trf_size)
@@ -277,7 +276,9 @@ class Tile(object):
     @property
     def polygon(self):
         """ Return extent geometry. """
-        return utils.extent2polygon(self.extent)
+        x1, y1, x2, y2 = self.extent
+        points = (x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)
+        return vectors.points2polygon(points)
 
 
 class Pyramid(stores.BaseStore):

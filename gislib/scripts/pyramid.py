@@ -8,13 +8,15 @@ from __future__ import division
 
 import argparse
 import logging
-import shutil
 import sys
 
 from osgeo import gdal
+import numpy as np
 
 from gislib import pyramids
 from gislib import progress
+
+MEM_DRIVER = gdal.GetDriverByName(b'mem')
 
 description = """
 Commandline tool for working with gislib pyramids.
@@ -44,6 +46,23 @@ def get_parser():
     return parser
 
 
+def rounded(sourcepath, precision=2):
+    """ Return rounded memory dataset. """
+    # Read
+    source = gdal.Open(sourcepath)
+    target = MEM_DRIVER.CreateCopy('', source)
+
+    # Round
+    array = np.ma.masked_equal(
+        target.GetRasterBand(1).ReadAsArray(),
+        target.GetRasterBand(1).GetNoDataValue(),
+    ).round(precision)
+    target.GetRasterBand(1).WriteArray(array.filled(
+        target.GetRasterBand(1).GetNoDataValue(),
+    ))
+    return target
+
+
 def pyramid(targetpath, sourcepaths, blocksize,
             datatype, nodatavalue, projection, tilesize):
     """ Create or update pyramid. """
@@ -52,7 +71,7 @@ def pyramid(targetpath, sourcepaths, blocksize,
 
     if not sourcepaths:
         return pyramid.add()
-    
+
     kwargs = {}
     if blocksize:
         kwargs.update(blocksize=tuple(int(t) for t in blocksize))
@@ -66,7 +85,8 @@ def pyramid(targetpath, sourcepaths, blocksize,
         kwargs.update(tilesize=tuple(int(t) for t in tilesize))
 
     for i, sourcepath in enumerate(sourcepaths):
-        dataset = gdal.Open(sourcepath)
+        #dataset = gdal.Open(sourcepath)
+        dataset = rounded(sourcepath)
         try:
             pyramid.add(dataset, sync=False, **kwargs)
         except RuntimeError as error:
