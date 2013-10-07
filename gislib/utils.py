@@ -28,10 +28,10 @@ def get_transformed_extent(extent, source_projection, target_projection):
     """
     Return extent transformed from source projection to target projection.
     """
-    polygon = extent2polygon(extent)
+    polygon = vectors.Geometry.fromextent(*extent).envelope
     transformation = osr.CoordinateTransformation(
         projections.get_spatial_reference(source_projection),
         projections.get_spatial_reference(target_projection),
     )
     polygon.Transform(transformation)
-    return geometry2envelopeextent(polygon)
+    return vectors.Geometry(geometry=polygon).extent

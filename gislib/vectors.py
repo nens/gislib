@@ -84,6 +84,15 @@ class Geometry(object):
     def __init__(self, geometry):
         self.geometry = geometry
 
+    @classmethod
+    def fromextent(cls, x1, y1, x2, y2):
+        points = ((x1, y1),
+                  (x2, y1),
+                  (x2, y2),
+                  (x1, y2),
+                  (x1, y1))
+        return cls(geometry=points2polygon(points))
+    
     @property
     def extent(self):
         """ Return x1, y1, x2, y2. """

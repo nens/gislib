@@ -5,6 +5,8 @@ Changelog of gislib
 0.2.8 (unreleased)
 ------------------
 
+- Fixed get_transformed_extent, added Geometry.fromextent.
+
 - Implement generic store data retrieval for geometries
 
 
