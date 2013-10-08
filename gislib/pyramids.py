@@ -522,21 +522,17 @@ class Pyramid(stores.BaseStore):
         children = collections.defaultdict(list)
         previous_level = min_level
         for tile in tiles:
-            # Get the data
+            # Get the dataset
             target = self.get_dataset(tile=tile, info=info)
 
             # To aggregate or not
-            try:
-                if tile.level == previous_level + 1:
-                    while children[previous_level]:
-                        rasters.reproject(
-                            children[previous_level].pop(), target
-                        )
-                else:
-                    rasters.reproject(dataset, target)
-            except RuntimeError as error:
-                logger.error('Current tile: {}'.format(tile.path))
-                raise error
+            if tile.level == previous_level + 1:
+                while children[previous_level]:
+                    rasters.reproject(
+                        children[previous_level].pop(), target
+                    )
+            else:
+                rasters.reproject(dataset, target)
             target = None  # Writes the header
 
             children[tile.level].append(self.get_dataset(tile))

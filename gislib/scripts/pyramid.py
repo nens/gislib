@@ -66,7 +66,7 @@ def rounded(sourcepath, precision=2):
 def pyramid(targetpath, sourcepaths, blocksize,
             datatype, nodatavalue, projection, tilesize):
     """ Create or update pyramid. """
-    indicator = progress.Indicator(len(sourcepaths))
+    indicator = progress.Indicator(len(sourcepaths), steps=1)
     pyramid = pyramids.Pyramid(path=targetpath)
 
     if not sourcepaths:
@@ -85,18 +85,15 @@ def pyramid(targetpath, sourcepaths, blocksize,
         kwargs.update(tilesize=tuple(int(t) for t in tilesize))
 
     for i, sourcepath in enumerate(sourcepaths):
+        logger.debug('Add: {}'.format(sourcepath))
         #dataset = gdal.Open(sourcepath)
         dataset = rounded(sourcepath)
-        try:
-            pyramid.add(dataset, sync=False, **kwargs)
-        except RuntimeError as error:
-            logger.error('Current soure: {}'.format(sourcepath))
-            raise error
+        pyramid.add(dataset, sync=False, **kwargs)
         indicator.update()
     pyramid.sync()
 
 
 def main():
     """ Call command with args from parser. """
-    logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+    logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
     pyramid(**vars(get_parser().parse_args()))
