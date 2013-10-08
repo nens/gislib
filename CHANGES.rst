@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.10 (unreleased)
+0.2.10 (2013-10-08)
 -------------------
 
 - Change debug messaging in pyramid and pyramid script.
