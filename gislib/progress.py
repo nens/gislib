@@ -63,7 +63,9 @@ class Indicator(object):
 
         if self.count % self.steps == 0:
             logger.debug('{} / {} ({}%)'.format(
-                self.count, self.total, 100 * self.count / self.total,
+                self.count,
+                self.total,
+                round(100 * self.count / self.total, 1)
             ))
 
     def complete(self):
