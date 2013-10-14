@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.11 (unreleased)
+0.2.11 (2013-10-14)
 -------------------
 
 - Add statistics module with ground curve function.
