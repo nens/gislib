@@ -27,19 +27,17 @@ class Indicator(object):
         INDICATOR.extend(3 * '.')
     INDICATOR.append('100 - done.\n')
 
-    def __init__(self, total, steps=None):
+    def __init__(self, total):
         """
         Set the expected length of the job.
 
         If steps is given, outputs a debug message every steps number,
         instead of the default indicator.
         """
-        self.steps = steps
         self.total = total
         self.count = 0  # Update counter
         self.position = 0  # Indicator position
-        if self.steps is None:
-            self._progress()  # Display the first item
+        self._progress()  # Display the first item
 
     def _progress(self):
         """ Update indicator one position. """
@@ -54,19 +52,10 @@ class Indicator(object):
         Because of the min(), excessive updates don't crash.
         """
         self.count += 1
-        if self.steps is None:
-            fraction = self.count / self.total
-            position = min(fraction, 1) * (len(self.INDICATOR) - 1)
-            while self.position <= position:
-                self._progress()
-            return
-
-        if self.count % self.steps == 0:
-            logger.debug('{} / {} ({}%)'.format(
-                self.count,
-                self.total,
-                round(100 * self.count / self.total, 1)
-            ))
+        fraction = self.count / self.total
+        position = min(fraction, 1) * (len(self.INDICATOR) - 1)
+        while self.position <= position:
+            self._progress()
 
     def complete(self):
         """ Complete progress. """
