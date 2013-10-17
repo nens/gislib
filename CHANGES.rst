@@ -7,6 +7,8 @@ Changelog of gislib
 
 - Fix get_data datatype handling.
 
+- Remove progress indicator in favor of debug line on the pyramid script.
+
 
 0.2.11 (2013-10-14)
 -------------------
