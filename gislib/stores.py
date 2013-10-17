@@ -44,10 +44,11 @@ class BaseStore(object):
         datatype = self.info['datatype']
 
         # Initialize resulting array to nodatavalue
+        dtype = gdal_array.flip_code(datatype)
         array = np.ones(
             (1, size[1], size[0]),
-            dtype=gdal_array.flip_code(datatype),
-        ) * nodatavalue
+            dtype=dtype,
+        ) * dtype(nodatavalue)
 
         # Create dataset and use it to retrieve data from the store
         dataset = rasters.array2dataset(array=array, extent=extent, crs=crs)

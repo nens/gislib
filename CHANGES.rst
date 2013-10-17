@@ -5,7 +5,7 @@ Changelog of gislib
 0.2.12 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Fix get_data datatype handling.
 
 
 0.2.11 (2013-10-14)
