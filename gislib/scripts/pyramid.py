@@ -14,7 +14,6 @@ from osgeo import gdal
 import numpy as np
 
 from gislib import pyramids
-from gislib import progress
 
 MEM_DRIVER = gdal.GetDriverByName(b'mem')
 
@@ -63,10 +62,18 @@ def rounded(sourcepath, precision=2):
     return target
 
 
+def progress(count, total):
+    """ Log a debug line about the progress. """
+    logger.debug('{} / {} ({:.1f}%)'.format(
+        count,
+        total,
+        100 * count / total,
+    ))
+
+
 def pyramid(targetpath, sourcepaths, blocksize,
             datatype, nodatavalue, projection, tilesize):
     """ Create or update pyramid. """
-    indicator = progress.Indicator(len(sourcepaths), steps=1)
     pyramid = pyramids.Pyramid(path=targetpath)
 
     if not sourcepaths:
@@ -84,12 +91,14 @@ def pyramid(targetpath, sourcepaths, blocksize,
     if tilesize:
         kwargs.update(tilesize=tuple(int(t) for t in tilesize))
 
-    for i, sourcepath in enumerate(sourcepaths):
+    total = len(sourcepaths)
+    for count, sourcepath in enumerate(sourcepaths):
+        progress(count=count, total=total)
         logger.debug('Add: {}'.format(sourcepath))
         #dataset = gdal.Open(sourcepath)
         dataset = rounded(sourcepath)
         pyramid.add(dataset, sync=False, **kwargs)
-        indicator.update()
+        progress(count=total, total=total)
     pyramid.sync()
 
 
