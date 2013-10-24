@@ -42,5 +42,6 @@ setup(name='gislib',
               'pyramid = gislib.scripts.pyramid:main',
               'juggle = gislib.scripts.juggle:main',
               'round = gislib.scripts.round:main',
+              'shared = gislib.scripts.shared:main',
           ]},
       )

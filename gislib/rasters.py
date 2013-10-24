@@ -22,7 +22,7 @@ gdal.UseExceptions()
 osr.UseExceptions()
 
 
-def array2dataset(array, extent, crs):
+def array2dataset(array, extent=None, crs=None):
     """
     Return gdal dataset.
 
@@ -63,11 +63,13 @@ def array2dataset(array, extent, crs):
     dataset = gdal.Open(dataset_name, gdal.GA_Update)
     
     # Add georeferencing based on extent and projection
-    x1, y1, x2, y2 = extent
-    geotransform = (x1, (x2 - x1) / array.shape[-1], 0,
-                    y2, 0, (y1 - y2) / array.shape[-2])
-    dataset.SetProjection(projections.get_wkt(crs))
-    dataset.SetGeoTransform(geotransform)
+    if extent is not None:
+        x1, y1, x2, y2 = extent
+        geotransform = (x1, (x2 - x1) / array.shape[-1], 0,
+                        y2, 0, (y1 - y2) / array.shape[-2])
+        dataset.SetGeoTransform(geotransform)
+    if crs is not None:
+        dataset.SetProjection(projections.get_wkt(crs))
 
     return dataset
 
