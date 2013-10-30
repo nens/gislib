@@ -5,7 +5,6 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
-import collections
 import datetime
 import glob
 import logging
@@ -32,6 +31,17 @@ logger = logging.getLogger(__name__)
 
 GTIFF = gdal.GetDriverByName(b'gtiff')
 TIMEOUT = 60  # seconds
+
+
+def initializer(*args):
+    """ Set some pool data globally. """
+    global initargs
+    initargs = args
+
+
+def warper(source, targetpath):
+    target = gdal.Open(targetpath, gdal.GA_Update)
+    source.warpinto(target)
 
 
 def dataset2outlinepolygon(dataset):
@@ -148,9 +158,9 @@ def get_tiles(spacing, extent):
     # Determine the ranges for the tiles
     x_range, y_range = map(
         xrange,
-        (int(math.floor((e) / s))
+        (int(math.floor(e / s))
          for e, s in zip(extent[:2], spacing)),
-        (int(math.ceil((e) / s))
+        (int(math.ceil(e / s))
          for e, s in zip(extent[2:], spacing)),
     )
 
@@ -160,33 +170,11 @@ def get_tiles(spacing, extent):
             yield x, y
 
 
-#def get_top_tile(geometry, tilesize, blocksize):
-    #"""
-    #Get the first tile for which a block completely contains geometry.
-    #"""
-    ## Determine at which level it would fit
-    #envelopesize = vectors.Geometry(geometry).size
-    #size = tuple(e / b for e, b in zip(envelopesize, blocksize))
-    #level = int(math.floor(math.log(min(size), 2)))
-
-    ## Find intersecting tile at that level
-    #point = geometry.Centroid().GetPoint(0)
-    #tiles = tuple(int(math.floor(p / (2 ** level * t)))
-                  #for t, p in zip(tilesize, point))
-    #tile = Tile(size=tilesize, level=level, tiles=tiles)
-
-    ## Get higher tiles until tile contains geometry
-    #while not tile.polygon.Contains(geometry):
-        #tile = get_parent(tile)
-
-    #return tile
-
-
 class LockError(Exception):
     pass
 
 
-class SingleDatasetPyramid(object):
+class Transport(object):
     """
     Simple in-shared-memory pyramid designed to fill the bigger pyramid
     storage.
@@ -222,7 +210,7 @@ class SingleDatasetPyramid(object):
         rasters.reproject(self.get_level(dataset).dataset, dataset)
 
 
-class TileGrid(object):
+class Grid(object):
     """
     Represent a grid of rastertiles.
     """
@@ -309,7 +297,7 @@ class TileGrid(object):
             rasters.reproject(source, dataset)
 
 
-class PyramidManager(object):
+class Manager(object):
     """
     Keeps the pyramid properties and delegates read and write requests
     to appropriate pyramid layers.
@@ -328,9 +316,27 @@ class PyramidManager(object):
             return
 
         # Determine config from sample dataset
-        samplelevel = str(levels.max())
-        samplepath = glob.glob(os.path.join(path, samplelevel, '*', '*'))[0]
-        self.config = get_config(gdal.Open(samplepath))
+        self.config = get_config(self.top)
+
+    def bootstrap(self, dataset, overrides):
+        """ Bootstrap manager for a new pyramid. """
+        self.config = get_config(dataset)
+        self.config.update(overrides)
+        self.levels = range(self.get_level(dataset),
+                            self.get_toplevel(dataset) + 1)
+
+
+    @property
+    def top(self):
+        """
+        Return toplevel dataset directly.
+
+        Used to determine pyramid properties and to extend the pyramid.
+        """
+        path = glob.glob(os.path.join(
+            self.path, str(self.levels[-1]), '*', '*',
+        ))[0]
+        return gdal.Open(path)
 
     def __getattr__(self, name):
         """ Return items from config for convenience. """
@@ -341,7 +347,7 @@ class PyramidManager(object):
         cellsize = tuple(2 * [2 ** level])
         config = dict(cellsize=cellsize)
         config.update(self.config)
-        return TileGrid(config)
+        return Grid(config)
 
     def get_level(self, dataset):
         """ Return appropriate level for dataset."""
@@ -361,10 +367,31 @@ class PyramidManager(object):
         else:
             return self.level2layer(level)
 
-    def get_stores(self, levels):
+    def get_stores(self, levels=None):
         """ Return store generator for levels, for writing purposes. """
+        if levels is None:
+            levels = self.levels
+
         for l in levels:
             yield self.level2layer(l)
+
+    def get_toplevel(self, dataset):
+        """
+        Get the first tile for which a block completely contains geometry.
+        """
+        extent = dataset2extent(dataset=dataset, projection=self.projection)
+        x1, y1, x2, y2 = extent
+        datasetsize = x2 - x1, y2 - y1
+
+        # find the level for which the dataset fits within the blocksize
+        pixelsize = max(d / b for d, b in zip(datasetsize, self.blocksize))
+        level = [int(math.ceil(math.log(pixelsize)))]
+
+        #grid = self.level2grid(level)
+        #tiles = get_tiles(spacing=grid.spacing, extent=extent)
+        #import ipdb; ipdb.set_trace()
+        increment = 0
+        return level + increment
 
 
 class Pyramid(stores.BaseStore):
@@ -386,7 +413,7 @@ class Pyramid(stores.BaseStore):
         available = hasattr(self, '_manager')
         expired = now > self._manager['expires'] if available else True
         if not available or expired:
-            manager = PyramidManager(self.path)
+            manager = Manager(self.path)
             expires = now + TIMEOUT
             self._manager = dict(expires=expires, manager=manager)
         return self._stores['manager']
@@ -466,7 +493,10 @@ class Pyramid(stores.BaseStore):
         """ Return extent of top. """
         return dataset2extent(gdal.Open(self.toppath))
 
-    def add(self, dataset=None, sync=True, **kwargs):
+    def extend(self, manager, level):
+        """ Extend pyramid 
+
+    def add(self, dataset, sync=True, **kwargs):
         """
         If there is no dataset, check if locked and reload.
 
@@ -479,50 +509,34 @@ class Pyramid(stores.BaseStore):
         self.lock()
 
         # get actual info from stores. otherwise use dataset and kwargs
-        manager = PyramidManager(self.path)
-        if not manager.levels:
-            manager.config = get_config(dataset)
-            manager.config.update(kwargs)
+        manager = Manager(self.path)
+        if manager.levels:
+            oldlevel = manager.levels[-1]
+            newlevel = manager.get_toplevel(dataset)
+        else:
+            manager.initialize(dataset=dataset, overrides=kwargs)
+            upper = manager.get_toplevel(dataset)
+            if upper
+        current = manager.levels[-1]
 
-        # find min and max levels:
+        if upper > current:
+            # First extend the pyramid with existing data
+            top = manager.top
+            transport = Transport(top)
+            levels = (i + 1 for i in range(current, upper))
+            for grid in manager.get_stores(levels):
+                for path in grid.get_paths(top):
+                    warper(transport, path)
 
-
-
-        top_tile = get_top_tile(geometry=bounds['raster'],
-                                tilesize=info['tilesize'],
-                                blocksize=info['blocksize'])
-
-
-
-        # walk and reproject
-        tiles = walk_tiles(tile=top_tile,
-                           stop=min_level,
-                           geometry=bounds['raster'])
-
-        children = collections.defaultdict(list)
-        previous_level = min_level
-        for tile in tiles:
-            # Get the dataset
-            target = self.get_dataset(tile=tile, info=info)
-
-            # To aggregate or not
-            if tile.level == previous_level + 1:
-                while children[previous_level]:
-                    rasters.reproject(
-                        children[previous_level].pop(), target
-                    )
-            else:
-                rasters.reproject(dataset, target)
-            target = None  # Writes the header
-
-            children[tile.level].append(self.get_dataset(tile))
-            previous_level = tile.level
-
-        # Update peak
-        if sync:
-            self.topsync()
+        # Now add the data from the new dataset
+        transport = Transport(dataset)
+        for grid in manager.get_stores():
+            for path in grid.get_paths(dataset):
+                warper(transport, path)
 
         self.unlock()
+        if sync:
+            self.sync()
 
     def warpinto(self, dataset):
         """ Warp data from the pyramid into dataset. """
