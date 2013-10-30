@@ -8,6 +8,8 @@ from __future__ import division
 import datetime
 import json
 import logging
+import math
+import multiprocessing
 import os
 
 from osgeo import gdal
@@ -22,7 +24,7 @@ gdal.UseExceptions()
 osr.UseExceptions()
 
 
-def array2dataset(array, extent=None, crs=None):
+def array2dataset(array):
     """
     Return gdal dataset.
 
@@ -61,16 +63,32 @@ def array2dataset(array, extent=None, crs=None):
     )
     # Acces the array memory as gdal dataset
     dataset = gdal.Open(dataset_name, gdal.GA_Update)
-    
-    # Add georeferencing based on extent and projection
-    if extent is not None:
-        x1, y1, x2, y2 = extent
-        geotransform = (x1, (x2 - x1) / array.shape[-1], 0,
-                        y2, 0, (y1 - y2) / array.shape[-2])
-        dataset.SetGeoTransform(geotransform)
-    if crs is not None:
-        dataset.SetProjection(projections.get_wkt(crs))
+    return dataset
 
+
+def dict2dataset(dictionary):
+    """
+    Like array2dataset, but set additional properties on the dataset.
+
+    Dictionary must contain 'array' and may contain: 'geotransform',
+    'projection', 'nodatavalue'
+    """
+    # dataset
+    array = dictionary['array']
+    dataset = array2dataset(array)
+    # geotransform
+    geotransform = dictionary.get('geotransform')
+    if geotransform is not None:
+        dataset.SetGeoTransform(geotransform)
+    # projection
+    projection = dictionary.get('projection')
+    if projection is not None:
+        dataset.SetProjection(projection)
+    # nodatavalue
+    nodatavalue = dictionary.get('nodatavalue')
+    if nodatavalue is not None:
+        for i in range(len(array)):
+            dataset.GetRasterBand(i + 1).SetNodataValue(nodatavalue)
     return dataset
 
 
@@ -84,6 +102,76 @@ def reproject(source, target, algorithm=gdal.GRA_NearestNeighbour):
         0.0,
         0.125,
     )
+
+
+def get_dtype(dataset):
+    """ Return the numpy dtype. """
+    return np.dtype(gdal_array.flip_code(
+        dataset.GetRasterBand(1).DataType,
+    ))
+
+
+def get_shape(dataset):
+    """ Return the numpy shape. """
+    return dataset.RasterCount, dataset.RasterYSize, dataset.RasterXSize
+
+
+def get_shrunk(shrink, shape, geotransform):
+    """ Get rescaled shape for a rescaled array. """
+    # Shrink shape, but elements must remain integer
+    shrunk_shape = ((shape[0],) +
+                    tuple(int(math.ceil(s / shrink)) for s in shape[1:]))
+
+    # Increase cellsize according to shape ratio
+    xfactor = shape[2] / shrunk_shape[2]
+    yfactor = shape[1] / shrunk_shape[1]
+    shrunk_geotransform = (geotransform[0],
+                           geotransform[1] * xfactor,
+                           geotransform[2] * yfactor,
+                           geotransform[3],
+                           geotransform[4] * xfactor,
+                           geotransform[5] * yfactor)
+
+    return dict(shape=shrunk_shape, geotransform=shrunk_geotransform)
+
+
+class SharedMemoryDataset(object):
+    """
+    Wrapper for a gdal dataset in a shared memory buffer.
+    """
+    def __init__(self, dataset, shrink=1):
+        """ Initialize a dataset based on """
+        dtype = get_dtype(dataset)
+        if shrink == 1:
+            shape = get_shape(dataset)
+            geotransform = dataset.GetGeoTransform()
+        else:
+            shrunk = get_shrunk(
+                shrink=shrink,
+                shape=get_shape(dataset),
+                geotransform=dataset.GetGeoTransform(),
+            )
+            shape = shrunk['shape']
+            geotransform = shrunk['geotransform']
+
+        # Create underlying numpy array with data in shared buffer
+        size = shape[0] * shape[1] * shape[2] * dtype.itemsize
+        self.array = np.frombuffer(
+            multiprocessing.RawArray('b', size), dtype,
+        ).reshape(*shape)
+
+        # Create a dataset from it
+        self.dataset = array2dataset(self.array)
+        self.dataset.SetGeoTransform(geotransform)
+        self.dataset.SetProjection(dataset.GetProjection())
+
+        if shrink == 1:
+            # Directly read the dataset into the shared memory array
+            dataset.ReadAsArray(buf_obj=self.array)
+        else:
+            # Use reproject to fill the shrunk dataset
+            reproject(source=dataset, target=self.dataset)
+            self.dataset.FlushCache()
 
 
 class Geometry(object):

@@ -16,6 +16,7 @@ from osgeo import gdal_array
 import numpy as np
 
 from gislib import rasters
+from gislib import pyramids
 
 TIF_DRIVER = gdal.GetDriverByName(b'gtiff')
 MEM_DRIVER = gdal.GetDriverByName(b'mem')
@@ -36,47 +37,27 @@ def get_parser():
     return parser
 
 
-def read_as_shared_array(dataset):
-    """
-    Return numpy array.
-
-    Puts the array data in shared memory for use with multiprocessing.
-    """
-    # Derive array properties from the dataset
-    dtype = np.dtype(gdal_array.flip_code(
-        dataset.GetRasterBand(1).DataType,
-    ))
-    shape = (dataset.RasterCount,
-             dataset.RasterYSize,
-             dataset.RasterXSize)
-    size = shape[0] * shape[1] * shape[2] * dtype.itemsize
-    # Create shared memory array and read into it
-    return dataset.ReadAsArray(buf_obj=np.frombuffer(
-        multiprocessing.RawArray('b', size), dtype
-    ).reshape(*shape))
-
-
-def func(shared):
+def func(smd):
     """ Modify the array. """
-    print(shared.ReadAsArray()[0,0])
-    shared.GetRasterBand(1).Fill(24)
-    shared.FlushCache()
+    gsdp.levels[-1].array[:] = 2
+    pass
+
+
+def init(sdp):
+    """ Create a home for the single dataset pyramid. """
+    global gsdp
+    gsdp = sdp
 
 
 def command(sourcepath):
     """ Do something spectacular. """
     dataset = gdal.Open(sourcepath)
-    array = read_as_shared_array(dataset)
-    shared = rasters.array2dataset(array, crs=None, extent=None)
-    shared.SetProjection(dataset.GetProjection())
-    shared.SetGeoTransform(dataset.GetGeoTransform())
-    process = multiprocessing.Process(
-        target=func,
-        kwargs=dict(shared=shared),
-    )
-    process.start()
-    process.join()
-    print(shared.ReadAsArray()[0,0])
+    sdp = pyramids.SingleDatasetPyramid(dataset)
+    from arjan.monitor import Monitor; mon = Monitor() 
+    pool = multiprocessing.Pool(initializer=init, initargs=(sdp,))
+    pool.map(func, range(1000))
+    mon.check('') 
+    print(sdp.levels[-1].array)
 
 
 def main():

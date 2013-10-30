@@ -66,7 +66,8 @@ class Command(object):
     def translate(self, sourcepath, targetpath):
         """ Convert to compressed tiff with RD srs. """
         return ' '.join([
-            'gdal_translate -ot Byte -of gtiff -co COMPRESS=DEFLATE',
+            #'gdal_translate -ot Byte -of gtiff -co COMPRESS=DEFLATE',
+            'gdal_translate -of gtiff -co COMPRESS=DEFLATE',
             '-a_srs epsg:28992 -q',
             sourcepath, targetpath,
         ])

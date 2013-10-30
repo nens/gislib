@@ -32,7 +32,6 @@ osr.UseExceptions()
 logger = logging.getLogger(__name__)
 
 GTIFF = gdal.GetDriverByName(b'gtiff')
-MEM = gdal.GetDriverByName(b'mem')
 TIMEOUT = 60  # seconds
 
 
@@ -83,116 +82,72 @@ def dataset2pixelpolygon(dataset):
     return vectors.points2polygon(points)
 
 
-def geometry2envelopesize(geometry):
-    """ Return size tuple. """
-    xmin, xmax, ymin, ymax = geometry.GetEnvelope()
-    return xmax - xmin, ymax - ymin
+def dataset2extent(dataset, projection=None):
+    """ 
+    Get extent of a dataset. 
+
+    If projection is given, transform extent first.
+    """
+    if projection is None:
+        # quick lookup
+        p, a, b, q, c, d = dataset.GetGeoTransform()
+        w, h = dataset.RasterXSize, dataset.RasterYSize
+        extent = np.dot([[a, b],[c, d]], [[0, w], [0, h]]) + [[p], [q]]
+        return tuple(result.ravel())
+    else:
+        # full transform
+        outline = dataset2outlinepolygon(dataset)
+        transformation = projections.get_coordinate_transformation(
+            source=dataset.GetProjection, target=projection,
+        )
+        outline.Transform(transformation)
+        return vector.Geometry(outline).extent
 
 
-def get_info(dataset):
+def get_options(blocksize):
+    """
+    Return blocksize dependent gtiff creation options.
+    """
+    return ['TILED=TRUE',
+            'SPARSE_OK=TRUE',
+            'COMPRESS=DEFLATE',
+            'BLOCKXSIZE={}'.format(blocksize[0]),
+            'BLOCKYSIZE={}'.format(blocksize[1])]
+
+
+def get_config(dataset):
     """ Return dictionary. """
     band = dataset.GetRasterBand(1)
-    return dict(datatype=band.DataType,
-                blocksize=band.GetBlockSize(),
-                nodatavalue=band.GetNoDataValue(),
-                projection=dataset.GetProjection(),
-                tilesize=(dataset.RasterXSize, dataset.RasterYSize))
-
-
-def get_bounds(dataset, projection):
-    """
-    Return dictionary.
-
-    Dictionary contains the boundaries of the dataset and its first pixel,
-    transformed to projection when necessary.
-
-    Transformation is considered unnecessary if the outline changes
-    less then 1 % of the pixelsize by transformation.
-
-    The outline is shrunk by 1% of the shortest pixelside, to prevent
-    edge intersections.
-    """
-    transformation = osr.CoordinateTransformation(
-        projections.get_spatial_reference(dataset.GetProjection()),
-        projections.get_spatial_reference(projection),
+    return dict(
+        datatype=band.DataType,
+        bands=dataset.RasterCount,
+        blocksize=band.GetBlockSize(),
+        nodatavalue=band.GetNoDataValue(),
+        projection=dataset.GetProjection(),
+        tilesize=(dataset.RasterYSize, dataset.RasterXSize),
+        #cellsize=(lambda g:(x[1], -x[5]))(dataset.GetGeoTransform()),
     )
 
-    # outline
-    raster_org = dataset2outlinepolygon(dataset)
-    raster_trf = raster_org.Clone()
-    raster_trf.Transform(transformation)
-
-    # pixel
-    pixel_org = dataset2pixelpolygon(dataset)
-    pixel_trf = pixel_org.Clone()
-    pixel_trf.Transform(transformation)
-
-    # verdict
-    pixel_trf_size = geometry2envelopesize(pixel_trf)
-    diff = max(map(lambda x, y: abs(x - y),
-                   raster_trf.GetEnvelope(),
-                   raster_org.GetEnvelope()))
-    transform = 100 * diff > min(pixel_trf_size)
-
-    # return
-    if transform:
-        pixel = pixel_trf
-        raster = raster_trf.Buffer(-0.01 * min(pixel_trf_size))
-    else:
-        pixel = pixel_org
-        raster = raster_org.Buffer(-0.01 * min(pixel_trf_size))
-
-    return dict(raster=raster, pixel=pixel)
 
 
-def get_level(pixel):
+
+def get_tiles(spacing, extent):
+    """ 
+    Return tile iterator.
     """
-    Get the minimum level for a pixel polygon.
-    """
-    size = geometry2envelopesize(pixel)
-    return int(math.floor(math.log(min(size), 2)))
-
-
-def get_tiles(tilesize, level, extent):
-    """ Return tile iterator. """
-    # tilesize are pixels, tilespan are projection units
-    tilespan = tuple(2 ** level * t for t in tilesize)
-
-    # Determine the ranges for the indices
-    tiles_x, tiles_y = map(
+    # Determine the ranges for the tiles
+    x_range, y_range = map(
         xrange,
-        (int(math.floor((e) / t))
-         for e, t in zip(extent[:2], tilespan)),
-        (int(math.ceil((e) / t))
-         for e, t in zip(extent[2:], tilespan)),
+        (int(math.floor((e) / s))
+         for e, s in zip(extent[:2], spacing)),
+        (int(math.ceil((e) / s))
+         for e, s in zip(extent[2:], spacing)),
     )
 
     # Iterate over the ranges
-    for tile_y in tiles_y:
-        for tile_x in tiles_x:
-            yield Tile(size=tilesize, level=level, indices=(tile_x, tile_y))
-
-
-def walk_tiles(tile, stop, geometry):
-    """
-    Return generator of tiles at lower levels that intersect
-    with geometry, stopping at level stop.
-    """
-    if not geometry.Intersects(tile.polygon):
-        return  # subtiles will not intersect either
-    if tile.level > stop:
-        # walk subtiles, too
-        subtiles = get_tiles(tilesize=tile.size,
-                             level=tile.level - 1,
-                             extent=tile.extent)
-        for subtile in subtiles:
-            walktiles = walk_tiles(tile=subtile,
-                                   stop=stop,
-                                   geometry=geometry)
-            for walktile in walktiles:
-                yield walktile
-    # finally, yield this tile
-    yield tile
+    for y in y_range:
+        for x in x_ranges:
+            yield x, y
 
 
 def get_parent(tile):
@@ -213,9 +168,9 @@ def get_top_tile(geometry, tilesize, blocksize):
 
     # Find intersecting tile at that level
     point = geometry.Centroid().GetPoint(0)
-    indices = tuple(int(math.floor(p / (2 ** level * t)))
+    tiles = tuple(int(math.floor(p / (2 ** level * t)))
                     for t, p in zip(tilesize, point))
-    tile = Tile(size=tilesize, level=level, indices=indices)
+    tile = Tile(size=tilesize, level=level, tiles=tiles)
 
     # Get higher tiles until tile contains geometry
     while not tile.polygon.Contains(geometry):
@@ -223,73 +178,210 @@ def get_top_tile(geometry, tilesize, blocksize):
 
     return tile
 
-
-def scale_geotransform(geotransform, factor):
-    """ Return geotransform scaled by a factor. """
-    return(geotransform[0],
-           geotransform[1] * factor,
-           geotransform[2] * factor,
-           geotransform[3],
-           geotransform[4] * factor,
-           geotransform[5] * factor)
-
-
 class LockError(Exception):
     pass
 
 
-class Tile(object):
-    def __init__(self, size, level, indices):
-        """ x, y, and t refer to block indices. """
-        self.size = size
-        self.level = level
-        self.indices = indices
-        self.path = os.path.join(str(level),
-                                 str(indices[0]),
-                                 str(indices[1]) + '.tif')
 
-    def __str__(self):
-        return '<Tile: size {}, level {}, indices {}>'.format(
-            self.size, self.level, self.indices,
+class SingleDatasetPyramid(object):
+    """
+    Simple in-shared-memory pyramid designed to fill the bigger pyramid
+    storage.
+    """
+    def __init__(self, dataset, stop=256):
+        """
+        Add overviews of the dataset until the overview is smaller
+        than given size.
+        """
+        self.levels = [rasters.SharedMemoryDataset(dataset)]
+        while max(self.levels[-1].array.shape[1:]) > stop:
+            self.levels.append(rasters.SharedMemoryDataset(
+                dataset=self.levels[-1].dataset, shrink=2,
+            ))
+        level2area = lambda l: dataset2pixelpolygon(l.dataset).GetArea()
+        self.areas = [level2area(l) for l in self.levels]
+
+    @property
+    def projection(self):
+        return self.levels[0].dataset.GetProjection()
+
+    def get_level(self, dataset):
+        """ Return the appropriate level for reprojection into dataset. """
+        area = get_bounds(dataset=dataset,
+                          projection=self.projection)['pixel'].GetArea()
+
+        for a, l in reversed(zip(self.areas, self.levels)):
+            if a < area:
+                return l
+            return self.levels[0]
+            
+    def warpinto(self, dataset):
+        """
+        Reproject appropriate level from self into dataset.
+        """
+        reproject(self.get_level(dataset).dataset, dataset)
+
+
+class TileStore(object):
+    """
+    path
+    bands
+    cellsize
+    tilesize
+    blocksize
+    projection
+    nodatavalue
+
+    Possible to initialize from a path, or a file, but also from a dictionary
+    """
+    def __init__(self, config):
+        # from config dictionary
+        self.__dict__.update(config)
+        # derived
+        self.spacing = tuple(c * t
+                             for c, t in zip(self.tilesize, 
+                                             self.cellsize))
+    
+    def get_path(self, tile):
+        """ Return the path for the tile file. """
+        return os.path.join(self.path, '{}', '{}.tif').format(*tile)
+    
+
+    def get_extent(self, dataset):
+        """ Return extent of a dataset in our projection. """
+        transformation = projections.get_coordinate_transformation(
+            dataset.projection, self.projection,
+        )
+        polygon = dataset2outlinepolygon(dataset)
+        polygon.Transform(transformation)
+        return vectors.Geometry(polygon).extent
+    
+    def get_geotransform(self, tile):
+        """ Return geotransform for a tile. """
+        return (
+            self.spacing[0] * tile[0],
+            self.cellsize[0],
+            0,
+            self.spacing[1] * (tile[1] + 1),
+            0,
+            -self.cellsize[1],
         )
 
-    def __repr__(self):
-        return str(self)
-
-    @property
-    def extent(self):
+    def get_tiles(self, dataset):
         """
-        Return extent tuple.
+        Return generator of tilepaths.
         """
-        return tuple(2 ** self.level *
-                     self.size[i] *
-                     (self.indices[i] + j)
-                     for j in (0, 1) for i in (0, 1))
+        tiles = get_tiles(spacing=self.spacing,
+                          extent=self.extent(dataset))
 
-    @property
-    def geotransform(self):
-        """ Return geotransform tuple. """
-        pixelsize = 2 ** self.level
-        xmin, ymin, xmax, ymax = self.extent
-        return xmin, pixelsize, 0, ymax, 0, -pixelsize
+    def get_datasets(self, dataset):
+        """
+        Return read-only dataset generator.
 
-    @property
-    def polygon(self):
-        """ Return extent geometry. """
-        x1, y1, x2, y2 = self.extent
-        points = (x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)
-        return vectors.points2polygon(points)
+        Silently skips when dataset does not exist on disk.
+        """
+        for tile in self.get_tiles(dataset):
+            try:
+                yield gdal.Open(self.get_path(tile))
+            except RuntimeError:
+                continue
+
+    def get_paths(self, dataset):
+        """
+        Return path generator.
+
+        It is guaranteed that a dataset exists at every path in the
+        generator.
+        """
+        for tile in self.get_tiles(dataset):
+            path = self.get_path(tile)
+            if not os.path.exists(path):
+                self.create(tile)
+            yield path
+                
+    def create_dataset(self, tile, info):
+        """ Create a new dataset. """
+        # prepare
+        logger.debug('Create {}'.format(path))
+        path = self.get_path(tile)
+        try:
+            os.makedirs(os.path.dirname(path))
+        except OSError:
+            pass  # directory already exists
+        # create
+        dataset = GTIFF.Create(self.get_path(tile),
+                               self.tilesize[0],
+                               self.tilesize[1],
+                               self.bands,
+                               self.datatype,
+                               get_options(self.blocksize))
+        # config
+        dataset.SetProjection(projections.get_wkt(self.projection))
+        dataset.SetGeoTransform(self.get_geotransform(tile)
+        for i in range(self.bands):
+            dataset.GetRasterBand(i + 1).SetNoDataValue(self.nodatavalue)
+
+    def warpinto(dataset):
+        """ Warp appropriate tiles into dataset. """
+        for source in self.get_datasets(dataset):
+            reproject(source, dataset)
+
+class PyramidInfo(object):
+    """ 
+    Container for pyramid info
+    """
+    def __init__(self, template, levels):
+        """ Template is a dataset, levels a list of integers. """
+        self.config = get_config(dataset=template)
+        self.levels = levels
+        for k, v in get_config(dataset):
+            setattr(self, k, v)
+
+    def get_level(self, dataset):
+        """ Return appropriate level for dataset. """
+        pixel = dataset2pixelpolygon(dataset)
+        transformation = projection.get_coordinate_transformation(
+            source=dataset.GetProjection(), target=self.projection,
+        )
+        pixel.Transform(transformation)
+        span = geometry2envelopesize(pixel)
+        return int(math.floor(math.log(min(span), 2)))
+
+    def level2store(self, level):
+        """ Return store corresponding to level. """
+        cellsize = (2 ** level)
+        config = dict(cellsize=cellsize)
+        config = self.config
+        return TileStore(
+
+
+    def get_store(self, dataset)
+        """ Instantiate the appropriate store for warping into dataset. """
+        level = max(levels[0], self.get_level(dataset))
+        if level > levels[-1]:
+            return None
+        else:
+            return 
+            
+        
+
+    def get_stores(levels):
+        """ Return store generator for levels, for writing purposes. """
+        for l in levels:
+            
+            
+
+    
+
 
 
 class Pyramid(stores.BaseStore):
     """
-    Pyramid datastore.
+    Pyramid datastore. Physically consisting of a number of tilestores
+    and a top.
     """
 
-    TILES = 'tiles'
-    PEAK = 'peak'
-
-    def __init__(self, path):
+    def __init__(self, path):   
         """
         Initialize.
 
@@ -298,80 +390,47 @@ class Pyramid(stores.BaseStore):
         """
         self.path = path
 
-    def get_options(self, blocksize):
-        """ Return blocksize dependent gtiff creation options. """
-        return [
-            'BLOCKXSIZE={}'.format(blocksize[0]),
-            'BLOCKYSIZE={}'.format(blocksize[1]),
-            'COMPRESS=DEFLATE',
-            'SPARSE_OK=TRUE',
-            'TILED=TRUE',
-        ]
-
     @property
-    def actualinfo(self):
+    def actual_stores(self):
         """
-        Return info dictionary or None if empty pyramid.
+
         """
         # See if any contents in the pyramid
-        path = os.path.join(self.path, self.TILES)
         try:
-            levels = os.listdir(path)
+            names = os.listdir(self.path)
         except OSError:
-            return
+            return []
+        levels = [int(n) for n in names if not name.startswith('.')]
         if not levels:
-            return
+            return []
 
-        # Derive extreme levels and top tile properties from filesystem
-        top_path = glob.glob(os.path.join(path,
-                                          max(levels, key=int), '*', '*'))[0]
+        # Derive properties from a sample dataset in the pyramid
+        samplelevel = str(levels.max())
+        samplepath = glob.glob(os.path.join(path, highest, '*', '*'))[0]
+        baseconfig = get_config(gdal.Open(samplepath))
 
-        # Start with info from top tile dataset
-        info = get_info(gdal.Open(top_path))
+        # Populate a list of tilestore objects
+        stores = []
+        for l in levels:
+            cellsize = 2 ** l,
+            config = dict(cellsize=cellsize)
+            config.update(baseconfig)
+            stores.append(TileStore(config))
 
-        # Update with info from folder structure
-        min_level = int(min(levels, key=int))
-        max_level, x, y = map(int, top_path[:-4].split(os.path.sep)[-3:])
-        top_tile = Tile(size=info['tilesize'], level=max_level, indices=(x, y))
-
-        info.update(
-            max_level=max_level,
-            min_level=min_level,
-            top_tile=top_tile,
-        )
-
-        # Add a peak if this is not the peak
-        if not self.path.endswith(self.PEAK):
-            info.update(peak=Pyramid(os.path.join(self.path, self.PEAK)))
-
-        return info
+        return stores
 
     @property
-    def info(self):
+    def stores(self):
+        """ Cached version of actual_stores. """
         now = time.time()
-        if not hasattr(self, '_info') or now - self._info['time'] > TIMEOUT:
-            self._info = dict(time=now, info=self.actualinfo)
-        return self._info['info']
+        if not hasattr(self, '_stores') or now - self._stores['time'] > TIMEOUT:
+            self._stores = dict(time=now, stores=self.actual_stores)
+        return self._stores['stores']
 
     @property
     def extent(self):
-        """ Return the extent of the datapart in peaks top tile. """
-        peak = self.info['peak']
-        dataset = peak.get_dataset(peak.info['top_tile'])
-
-        # Return geotransform as matrices
-        geotransform = np.array(dataset.GetGeoTransform())
-        matrix = geotransform[[1, 2, 4, 5]].reshape(2, 2)
-        offset = geotransform[[0, 3]].reshape(2, 1)
-
-        # Determine the pixels that are not nodata
-        array = dataset.GetRasterBand(1).GetMaskBand().ReadAsArray()
-        pixels = np.array(tuple((i.min(), i.max() + 1)
-                          for i in array.nonzero()))[::-1]
-
-        # Return as extent
-        (x1, x2), (y2, y1) = np.dot(matrix, pixels) + offset
-        return x1, y1, x2, y2
+        """ Return extent of top. """
+        return dataset2extent(gdal.Open(self.toppath))
 
     # =========================================================================
     # Locking
@@ -379,7 +438,7 @@ class Pyramid(stores.BaseStore):
 
     @property
     def lockpath(self):
-        return os.path.join(self.path, 'lock')
+        return os.path.join(self.path, '.lock')
 
     def lock(self):
         """ Create a lockfile. """
@@ -407,73 +466,37 @@ class Pyramid(stores.BaseStore):
             pass
 
     # =========================================================================
-    # Datasets
+    # Top
     # -------------------------------------------------------------------------
 
-    def new_dataset(self, tile, info):
-        """ Return gdal dataset. """
-        path = os.path.join(self.path, self.TILES, tile.path)
+    @property
+    def toppath(self):
+        return os.path.join(self.path, '.top')
 
-        try:
-            os.makedirs(os.path.dirname(path))
-        except OSError:
-            pass  # It existed.
-
-        create_options = self.get_options(info['blocksize'])
-        dataset = GTIFF.Create(path, tile.size[0], tile.size[1],
-                               1, info['datatype'], create_options)
-
-        dataset.SetProjection(projections.get_wkt(info['projection']))
-        dataset.SetGeoTransform(tile.geotransform)
-        dataset.GetRasterBand(1).SetNoDataValue(info['nodatavalue'])
-
-        return dataset
-
-    def get_dataset(self, tile, info=None):
+    def topsync(self):
+        """ 
+        Create a dataset at the top of half the blocksize
+        - Read the top tile, determine extent of data containing part
+        - Create toptile accordingly, but shrink by 2
+        - warpinto from highest store.
+        - Do a temp & move to keep it available
         """
-        Return a gdal dataset corresponding to a tile.
+        # Below is code from old get_extent.
+        """ Return the extent of the datapart in peaks top tile. """
+        peak = self.info['peak']
+        dataset = peak.get_dataset(peak.info['top_tile'])
 
-        Adding an info dictionary implies write mode.
+        # Return geotransform as matrices
+        p, a, b, q, c, d = np.array(dataset.GetGeoTransform())
 
-        If the dataset does not exist, in read mode a RuntimeError is
-        raised; in write mode a new dataset is created.
-        """
-        path = os.path.join(self.path, self.TILES, tile.path)
+        # Determine the pixels that are not nodata
+        array = dataset.GetRasterBand(1).GetMaskBand().ReadAsArray()
+        pixels = np.array(tuple((i.min(), i.max() + 1)
+                          for i in array.nonzero()))[::-1]
 
-        if info is None:
-            return gdal.Open(path)
-
-        try:
-            dataset = gdal.Open(path, gdal.GA_Update)
-            logger.debug('Update {}'.format(path))
-        except RuntimeError:
-            dataset = self.new_dataset(tile=tile, info=info)
-            logger.debug('Create {}'.format(path))
-        return dataset
-
-    def get_datasets(self, tiles):
-        """
-        Return read-only dataset generator.
-
-        Silently skips when dataset does not exist on disk.
-        """
-        for tile in tiles:
-            try:
-                yield self.get_dataset(tile=tile)
-            except RuntimeError:
-                continue
-
-    def get_promoted(self, tile, info):
-        """
-        Return parent tile.
-
-        Reproject tiles dataset into parent dataset.
-        """
-        parent = get_parent(tile)
-        source = self.get_dataset(tile)
-        target = self.get_dataset(tile=parent, info=info)
-        rasters.reproject(source, target)
-        return parent
+        # Return as extent
+        (x1, x2), (y2, y1) = np.dot([[a, b],[c, d]], pixels) + p, q
+        return x1, y1, x2, y2
 
     # =========================================================================
     # Interface
@@ -491,28 +514,21 @@ class Pyramid(stores.BaseStore):
         """
         self.lock()
 
-        if dataset is None:
-            # unlock and return
-            return self.unlock()
-
-        # use pyramid info if possible, otherwise use dataset and kwargs
-        info = self.actualinfo
-        if info is None:
-            info = get_info(dataset)
+        # get actual info from stores. otherwise use dataset and kwargs
+        stores = self.actual_stores
+        if config is None:
+            config = get_config(dataset)
             info.update(kwargs)
-            if not self.path.endswith(self.PEAK):
-                info.update(peak=Pyramid(os.path.join(self.path, self.PEAK)))
 
         # get bounds in pyramids projection
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
-
-        # derive baselevel
-        min_level = info.get('min_level', get_level(bounds['pixel']))
 
         # find new top tile
         top_tile = get_top_tile(geometry=bounds['raster'],
                                 tilesize=info['tilesize'],
                                 blocksize=info['blocksize'])
+
+
 
         # walk and reproject
         tiles = walk_tiles(tile=top_tile,
@@ -538,75 +554,32 @@ class Pyramid(stores.BaseStore):
             children[tile.level].append(self.get_dataset(tile))
             previous_level = tile.level
 
-        # sync old and new toptiles
-        lo, hi = top_tile, info.get('top_tile', top_tile)
-        if hi.level < lo.level:
-            hi, lo = lo, hi  # swap
-        while lo.level < hi.level:
-            lo = self.get_promoted(tile=lo, info=info)
-        while lo.indices != hi.indices:
-            lo = self.get_promoted(tile=lo, info=info)
-            hi = self.get_promoted(tile=hi, info=info)
-
         # Update peak
         if sync:
-            self.sync()
+            self.topsync()
 
         self.unlock()
-
-    def sync(self):
-        """
-        Update a peak pyramid.
-
-        Pyramids with large tilesizes warp slow at high zoomlevels. The
-        use of a peak pyramid with a small tilesize on top of the main
-        pyramid solves that.
-        """
-        path = os.path.join(self.path, self.PEAK)
-        info = self.actualinfo
-        if os.path.exists(path):
-            shutil.rmtree(path)
-        peak = Pyramid(path)
-        dataset = self.get_dataset(info['top_tile'])
-
-        # Base of peak is one higher than tile
-        base = MEM.Create('',
-                          info['tilesize'][0] // 2,
-                          info['tilesize'][1] // 2,
-                          1,
-                          info['datatype'])
-        base.SetProjection(info['projection'])
-        base.GetRasterBand(1).SetNoDataValue(info['nodatavalue'])
-        base.SetGeoTransform(
-            scale_geotransform(dataset.GetGeoTransform(), 2),
-        )
-        base.GetRasterBand(1).Fill(info['nodatavalue'])
-        rasters.reproject(dataset, base)
-        peak.add(base, sync=False, blocksize=(256, 256), tilesize=(256, 256))
 
     def warpinto(self, dataset):
         """ Warp data from the pyramid into dataset. """
         # if no pyramid info, pyramid is empty.
-        info = self.info
-        if info is None:
+        stores = self.stores
+        if not stores:
             return
 
         # get bounds in pyramids projection
+        projections.Get
         bounds = get_bounds(dataset=dataset, projection=info['projection'])
-        level = max(info['min_level'], get_level(bounds['pixel']))
-
-        # warp from peak if appropriate
-        if level > info['max_level'] and 'peak' in info:
-            return info['peak'].warpinto(dataset)
-
-        # This is the top of the main pyramid (level == max_level) or the peak
-        if level >= info['max_level']:
-            tiles = info['top_tile'],
+        level = max(get_level(bounds['pixel']), self.info['baselevel'])
+            
+        extent = vectors.Geometry(bounds['raster']).extent
+        storey = self.info['storeys'].get(level)
+        if storey is None:
+            sources = [gdal.Open(self.peak)]
         else:
-            tiles = get_tiles(
-                tilesize=info['tilesize'],
-                level=level,
-                extent=vectors.Geometry(bounds['raster']).extent,
-            )
-        for source in self.get_datasets(tiles):
+            tiles = get_tiles(extent=extent,
+                              level=self.level,
+                              tilesize=self.tilesize)
+            sources = storey.get_datasets(tiles)
+        for source in sources:
             rasters.reproject(source, dataset)
