@@ -6,12 +6,12 @@ Using pyramids
 
 **Command line**
 
-Say you want to add a tif test data set to a new pyramid, assuming you want to set your NODATA value to -9999:
+Say you want to add a tif test data set to a new pyramid, assuming you want to set your NODATA value to -9999::
     
     mkdir /path/to/pyramid
     pyramid -b 256 256 -t 1024 1024 -n -9999  /path/to/pyramid /path/to/test.tif
 
-Then if you want to add data to that pyramid you can just:
+Then if you want to add data to that pyramid you can just::
 
     pyramid /path/to/pyramid /path/to/additional_data.tif
 
