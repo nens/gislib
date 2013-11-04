@@ -9,10 +9,13 @@ import datetime
 import glob
 import logging
 import math
+import multiprocessing
 import os
+import tempfile
 import time
 
 from osgeo import gdal
+from osgeo import gdal_array
 from osgeo import ogr
 from osgeo import osr
 
@@ -33,45 +36,45 @@ GDAL_DRIVER_GTIFF = gdal.GetDriverByName(b'gtiff')
 TIMEOUT = 60  # seconds
 
 
-def initialize(*args):
+def initialize(arg_transport):
     """ Set some pool data globally. """
-    global initargs
-    initargs = args
+    global transport
+    transport = arg_transport
 
 
-def warp(source, targetpath):
+def warp(targetpath):
     target = gdal.Open(targetpath, gdal.GA_Update)
-    source.warpinto(target)
+    transport.warpinto(target)
 
 
 def crop(dataset):
     """
-    Return cropped memorycopy of dataset.
-
-    ReadAsArray()
-    Find nonzero edges
-    adjust geotransform accordingly
-    array2dataset
-    projection, geotransform, nodatavalues, etc.
-    Some useful code:
-        peak = self.info['peak']
-        dataset = peak.get_dataset(peak.info['top_tile'])
-
-        # Return geotransform as matrices
-        p, a, b, q, c, d = np.array(dataset.GetGeoTransform())
-
-        # Determine the pixels that are not nodata
-        array = dataset.GetRasterBand(1).GetMaskBand().ReadAsArray()
-        pixels = np.array(tuple((i.min(), i.max() + 1)
-                          for i in array.nonzero()))[::-1]
-
-        # Return as extent
-        (x1, x2), (y2, y1) = np.dot([[a, b], [c, d]], pixels) + p, q
-        return x1, y1, x2, y2
+    Return cropped memory copy of dataset.
     """
-    logger.warn('Cropper nog implemented yet!')
-    return dataset
+    array = dataset.ReadAsArray()
+    array.shape = dataset.RasterCount, dataset.RasterYSize, dataset.RasterXSize
+    no_data_value = dataset.GetRasterBand(1).GetNoDataValue()
+    p, a, b, q, c, d = np.array(dataset.GetGeoTransform())
+    indices = np.where(~np.equal(array, no_data_value))
+    slice_z, slice_y, slice_x = (slice(i.min(), i.max() + 1) for i in indices)
+    
+    # determine new geotransform
+    points = (slice_x.start, slice_x.stop), (slice_y.start, slice_y.stop)
+    (x1, x2), (y2, y1) = np.dot([[a, b], [c, d]], points) + (p, q)
+    width, height = slice_x.stop - slice_x.start, slice_y.stop - slice_y.start
+    geotransform = x1, (x2 - x1) / width, 0, y2, 0, (y1 - y2) / height
 
+    # create cropped result dataset
+    cropped = gdal_array.OpenArray(array[:, slice_y, slice_x])
+    cropped.SetProjection(dataset.GetProjection())
+    cropped.SetGeoTransform(geotransform)
+    for i in range(cropped.RasterCount):
+        cropped.GetRasterBand(i + 1).SetNoDataValue(no_data_value)
+
+    import ipdb; ipdb.set_trace() 
+    
+    return cropped
+    
 
 def dataset2outline(dataset, projection=None):
     """
@@ -121,7 +124,7 @@ def dataset2outline(dataset, projection=None):
         polygon = vectors.array2polygon(array)
 
     geometry = vectors.Geometry(polygon)
-    if projection is None:
+    if projection is None or projection == dataset.GetProjection():
         return geometry
     geometry.transform(source=dataset.GetProjection(), target=projection)
     return geometry
@@ -134,32 +137,34 @@ def dataset2pixel(dataset, projection=None):
                                        [0, 0, 1, 1, 0]]) + [[p], [q]]
     polygon = vectors.points2polygon(points.transpose())
     geometry = vectors.Geometry(polygon)
-    if projection is None:
+    if projection is None or projection == dataset.GetProjection():
         return geometry
     geometry.transform(source=dataset.GetProjection(), target=projection)
     return geometry
 
 
-def get_options(blocksize):
+def get_options(block_size):
     """
-    Return blocksize dependent gtiff creation options.
+    Return block_size dependent gtiff creation options.
     """
     return ['TILED=TRUE',
             'SPARSE_OK=TRUE',
             'COMPRESS=DEFLATE',
-            'BLOCKXSIZE={}'.format(blocksize[0]),
-            'BLOCKYSIZE={}'.format(blocksize[1])]
+            'BLOCKXSIZE={}'.format(block_size[0]),
+            'BLOCKYSIZE={}'.format(block_size[1])]
 
 
 def get_config(dataset):
     """ Return dictionary. """
     band = dataset.GetRasterBand(1)
-    return dict(datatype=band.DataType,
-                bands=dataset.RasterCount,
-                blocksize=band.GetBlockSize(),
-                nodatavalue=band.GetNoDataValue(),
-                projection=dataset.GetProjection(),
-                rastersize=(dataset.RasterYSize, dataset.RasterXSize))
+    return dict(
+        block_size=band.GetBlockSize(),
+        data_type=band.DataType,
+        no_data_value=band.GetNoDataValue(),
+        projection=dataset.GetProjection(),
+        raster_count=dataset.RasterCount,
+        raster_size=(dataset.RasterYSize, dataset.RasterXSize),
+    )
 
 
 def get_tiles(spacing, extent):
@@ -198,24 +203,26 @@ class Transport(object):
         Add overviews of the dataset until the overview is smaller
         than given size.
         """
+        self.projection = dataset.GetProjection()
+        self.projection = dataset.GetProjection()
         self.levels = [rasters.SharedMemoryDataset(dataset)]
         while max(self.levels[-1].array.shape[1:]) > stop:
             self.levels.append(rasters.SharedMemoryDataset(
                 dataset=self.levels[-1].dataset, shrink=2,
             ))
 
-        self.pixelsizes = [dataset2pixel(l.dataset).size for l in self.levels]
-        self.projection = self.levels[0].dataset.GetProjection()
+        self.pixelsizes = tuple(max(dataset2pixel(l.dataset).size) 
+                                for l in self.levels)
+        # Points for numpy interpolation, used for get_level method.
+        self.points = zip(*tuple((s, i + o) 
+                                 for i, s in enumerate(self.pixelsizes[1:]) 
+                                 for o in (0, 1)))
 
     def get_level(self, dataset):
         """ Return the appropriate level for reprojection into dataset. """
-        pixelsize = dataset2pixel(dataset=dataset,
-                                  projection=self.projection).size
-
-        for p, l in reversed(zip(self.pixelsizes, self.levels)):
-            if max(p) < min(pixelsize):
-                return l
-            return self.levels[0]
+        pixelsize = min(dataset2pixel(dataset=dataset,
+                                      projection=self.projection).size)
+        return self.levels[int(np.interp(pixelsize, *self.points))]
 
     def warpinto(self, dataset):
         """
@@ -228,23 +235,22 @@ class Grid(object):
     """
     Represent a grid of rastertiles.
     """
-    def __init__(self, config):
-        # from config dictionary
-        self.__dict__.update(config)
-        # derived
-        self.spacing = tuple(c * t
-                             for c, t in zip(self.tilesize,
-                                             self.cellsize))
+    def __init__(self, **kwargs):
+        """ Put all the kwargs on the class and derive spacing. """
+        self.__dict__.update(kwargs)
+        self.spacing = tuple(t * c
+                             for t, c in zip(self.cell_size,
+                                             self.raster_size))
 
     def tile2geotransform(self, tile):
         """ Return geotransform for a tile. """
         return (
             self.spacing[0] * tile[0],
-            self.cellsize[0],
+            self.cell_size[0],
             0,
             self.spacing[1] * (tile[1] + 1),
             0,
-            -self.cellsize[1],
+            -self.cell_size[1],
         )
 
     def tile2path(self, tile):
@@ -261,16 +267,16 @@ class Grid(object):
             pass  # directory already exists
         # create
         dataset = GDAL_DRIVER_GTIFF.Create(path,
-                                           self.tilesize[0],
-                                           self.tilesize[1],
-                                           self.bands,
-                                           self.datatype,
-                                           get_options(self.blocksize))
+                                           self.raster_size[0],
+                                           self.raster_size[1],
+                                           self.raster_count,
+                                           self.data_type,
+                                           get_options(self.block_size))
         # config
         dataset.SetProjection(projections.get_wkt(self.projection))
         dataset.SetGeoTransform(self.tile2geotransform(tile))
-        for i in range(self.bands):
-            dataset.GetRasterBand(i + 1).SetNoDataValue(self.nodatavalue)
+        for i in range(self.raster_count):
+            dataset.GetRasterBand(i + 1).SetNoDataValue(self.no_data_value)
 
     def get_tiles(self, dataset):
         """
@@ -295,22 +301,14 @@ class Grid(object):
                 logger.debug('Update {}'.format(path))
             yield path
 
-    def get_datasets(self, dataset=None):
+    def get_datasets(self, dataset):
         """
         Return read-only dataset generator.
 
-        If a dataset is supplied, yield available datasets that intersect
-        with datasets extent. Otherwise, return all available datasets
-        in the grid.
+        The generator yields only datasets whose extent intersect with
+        datasets extent.
         """
-        if dataset is None:
-            # These paths always exist
-            paths = glob.iglob(os.path.join(
-                self.path, str(self.level), '*', '*',
-            ))
-        else:
-            # These paths may or may not exist
-            paths = (self.get_path(tile) for tile in self.get_tiles(dataset))
+        paths = (self.get_path(tile) for tile in self.get_tiles(dataset))
         for path in paths:
             try:
                 yield gdal.Open(self.get_path(tile))
@@ -341,23 +339,27 @@ class Manager(object):
         if not levels:
             return
 
-        # Determine config from sample dataset
-        self.config = get_config(self.top)
-
-    def __getattr__(self, name):
-        """ Return items from config for convenience. """
-        if name == 'config':
-            raise AttributeError(name)
-        return self.config[name]
+        # Determine config first toplevel dataset.
+        topleveldatasets = self.get_datasets(-1)
+        self.__dict__.update(get_config(topleveldatasets.next()))
+        
 
     def __getitem__(self, level):
         """ Index is the index to the level, so it is not the level itself. """
         """ Return store corresponding to level. """
-        cellsize = tuple(2 * [2 ** level])
+        cell_size = tuple(2 * [2 ** level])
         path = os.path.join(self.path, str(level))
-        config = dict(cellsize=cellsize, path=path)
-        config.update(self.config)
-        return Grid(config)
+        kwargs = dict(
+            block_size=self.block_size,
+            cell_size=cell_size, 
+            data_type=self.data_type,
+            no_data_value=self.no_data_value,
+            path=path,
+            projection=self.projection,
+            raster_count=self.raster_count,
+            raster_size=self.raster_size,
+        )
+        return Grid(**kwargs)
 
     @property
     def peakpath(self):
@@ -373,21 +375,41 @@ class Manager(object):
 
     def bootstrap(self, dataset, overrides):
         """ Bootstrap manager for a new pyramid. """
-        self.config = get_config(dataset)
-        self.config.update(overrides)
+        self.__dict__.update(get_config(dataset))
+        self.__dict__.update(overrides)
         self.levels = range(self.get_level(dataset),
                             self.get_toplevel(dataset) + 1)
 
     def sync(self):
         """
-        Create a dataset at the top of half the blocksize
-            Get extent of highest managed level
-        - , determine extent of data containing part via
-        - Create toptile accordingly, but shrink by 2
-        - warpinto from highest store.
-        - Do a temp & move to keep it available
+        Create or replace the peak with current data.
         """
-        pass
+        cropped = []
+        for dataset in self.get_datasets(-1):
+            cropped.append(crop(dataset))
+        extents = [dataset2outline(c).extent for c in cropped]
+        x1, y1, x2, y2 = zip(*extents)
+        x1, y1, x2, y2 = min(x1), min(y1), max(x2), max(y2)
+        geotransform = x1, (x2 - x1) / 256, 0, y2, 0, (y1 - y2) / 256
+        
+        # create
+        fd, temppath = tempfile.mkstemp(dir=self.path, prefix='.pyramid.tmp.')
+        dataset = GDAL_DRIVER_GTIFF.Create(temppath,
+                                           256,
+                                           256,
+                                           self.raster_count,
+                                           self.data_type,
+                                           get_options(block_size=(256, 256)))
+        dataset.SetProjection(projections.get_wkt(self.projection))
+        dataset.SetGeoTransform(geotransform)
+        for i in range(self.raster_count):
+            dataset.GetRasterBand(i + 1).SetNoDataValue(self.no_data_value)
+        for c in cropped:
+            rasters.reproject(c, dataset)
+
+        dataset = None
+        os.close(fd)
+        os.rename(temppath, self.peakpath)
 
     def get_level(self, dataset):
         """
@@ -411,8 +433,21 @@ class Manager(object):
         else:
             x1, y1, x2, y2 = zip(extent, outline.extent)
             combinedsize = max(x2) - min(x1), max(y2) - min(y1)
-        pixelsize = max(d / b for d, b in zip(combinedsize, self.blocksize))
+        pixelsize = max(d / b for d, b in zip(combinedsize, self.block_size))
         return int(math.ceil(math.log(pixelsize)))
+        
+    def get_datasets(self, index):
+        """ 
+        Return all datasets from a path.
+        
+        Note that it assumes a two-deep directory structure for the level.
+        """
+        level = self.levels[index]
+        paths = glob.iglob(os.path.join(
+            self.path, str(level), '*', '*',
+        ))
+        for path in paths:
+            yield gdal.Open(path)
 
     def extend(self, newmax):
         """
@@ -435,7 +470,7 @@ class Manager(object):
         # prepare for data addition
         if self.levels:
             oldlevel = self.levels[-1]
-            newlevel = self.get_newlevel(dataset)
+            newlevel = self.get_toplevel(dataset)
             if newlevel > oldlevel:
                 self.extend(newlevel)
         else:
@@ -444,8 +479,13 @@ class Manager(object):
         # do the data addition
         transport = Transport(dataset)
         paths = (p for l in self.levels for p in self[l].get_paths(dataset))
-        for path in paths:
-            warp(transport, path)
+        
+        pool = multiprocessing.Pool(initializer=initialize, initargs=[transport])
+        pool.map(warp, paths)
+
+        #initialize(transport)
+        #map(warp, paths)
+
 
     def warpinto(self, dataset):
         """
@@ -490,7 +530,7 @@ class Pyramid(stores.BaseStore):
             manager = Manager(self.path)
             expires = now + TIMEOUT
             self._manager = dict(expires=expires, manager=manager)
-        return self._stores['manager']
+        return self._manager['manager']
 
     @property
     def lockpath(self):
@@ -524,7 +564,7 @@ class Pyramid(stores.BaseStore):
     def add(self, dataset, sync=True, **kwargs):
         """
         Any kwargs are used to override dataset projection and datatype,
-        nodatavalue, tilesize. Kwargs are ignored if data already exists
+        nodatavalue, tile_size. Kwargs are ignored if data already exists
         in the pyramid.
         """
         self.lock()
@@ -536,19 +576,6 @@ class Pyramid(stores.BaseStore):
 
     def sync(self):
         return self.manager.sync()
-
-
-    #def warpinto(self, dataset):
-        #""" Warp data from the pyramid into dataset. """
-        #elf.manager.warpinto(dataset):
-            #return
-        #try:
-            #rasters.reproject(
-                #source=gdal.Open(self.toppath),
-                #target=dataset,
-            #)
-        #except RuntimeError:
-            #pass
 
     #def single(self, point):
         #""" Return value from lowest level. """
