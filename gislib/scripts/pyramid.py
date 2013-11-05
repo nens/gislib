@@ -97,7 +97,7 @@ def pyramid(target_path, source_paths, block_size,
         logger.debug('Add: {}'.format(source_path))
         #dataset = gdal.Open(source_path)
         dataset = rounded(source_path)
-        #pyramid.add(dataset, sync=False, **kwargs)
+        pyramid.add(dataset, sync=False, **kwargs)
     progress(count=total, total=total)
     pyramid.sync()
 

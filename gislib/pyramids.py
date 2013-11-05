@@ -42,37 +42,45 @@ def initialize(arg_transport):
     transport = arg_transport
 
 
-def warp(targetpath):
-    target = gdal.Open(targetpath, gdal.GA_Update)
+def warp(path_and_blocks):
+    """ Warp global transport into specified blocks from dataset at path. """
+    path, blocks = path_and_blocks
+    target = gdal.Open(path, gdal.GA_Update)
+    # After implementing read_block and write_block, to be replaced by:
+    # for i, j in blocks:
+    #     dataset = gdal.Open(path, gdal_GA_Update)
+    #     block = rasters.read_block(dataset, (i, -j))
+    #     transport.warpinto(block)
+    #     rasters.write_block(dataset, (i, -j), block)
     transport.warpinto(target)
 
 
 def crop(dataset):
     """
     Return cropped memory copy of dataset.
+
+    The code uses u, v, w for indices, x, y, z and p, q for points.
     """
     array = dataset.ReadAsArray()
     array.shape = dataset.RasterCount, dataset.RasterYSize, dataset.RasterXSize
     no_data_value = dataset.GetRasterBand(1).GetNoDataValue()
-    p, a, b, q, c, d = np.array(dataset.GetGeoTransform())
     indices = np.where(~np.equal(array, no_data_value))
-    slice_z, slice_y, slice_x = (slice(i.min(), i.max() + 1) for i in indices)
+    w1, w2, v1, v2, u1, u2 = (m for i in indices for m in (i.min(), i.max()))
     
     # determine new geotransform
-    points = (slice_x.start, slice_x.stop), (slice_y.start, slice_y.stop)
-    (x1, x2), (y2, y1) = np.dot([[a, b], [c, d]], points) + (p, q)
-    width, height = slice_x.stop - slice_x.start, slice_y.stop - slice_y.start
+    p, a, b, q, c, d = np.array(dataset.GetGeoTransform())
+    points = (u1, u2), (v1, v2)
+    (x1, x2), (y2, y1) = np.dot([[a, b], [c, d]], points) + ((p,), (q,))
+    width, height = u2 - u1, v2 - v1
     geotransform = x1, (x2 - x1) / width, 0, y2, 0, (y1 - y2) / height
 
     # create cropped result dataset
-    cropped = gdal_array.OpenArray(array[:, slice_y, slice_x])
+    cropped = gdal_array.OpenArray(array[:, v1:v2, u1:u2])
     cropped.SetProjection(dataset.GetProjection())
     cropped.SetGeoTransform(geotransform)
     for i in range(cropped.RasterCount):
         cropped.GetRasterBand(i + 1).SetNoDataValue(no_data_value)
 
-    import ipdb; ipdb.set_trace() 
-    
     return cropped
     
 
@@ -285,6 +293,22 @@ class Grid(object):
         outline = dataset2outline(dataset=dataset, projection=self.projection)
         return get_tiles(spacing=self.spacing, extent=outline.extent)
 
+    def get_tiles_and_blocks(self, dataset):
+        """ Return generator of tile and block indices. """
+        tile_spacing = self.spacing
+        original_extent = dataset2outline(dataset=dataset,
+                                          projection=self.projection).extent
+        x1, y1, x2, y2 = original_extent                                          
+        for tile in get_tiles(spacing=tile_spacing, extent=original_extent):
+            left, top = (s * (t + i)
+                         for s, t, i in zip(tile_spacing, tile, (0,1)))
+            shifted_extent = x1 - left, y1 - top, x2 - left, y2 - top
+            block_spacing = tuple(c * b for c, b in zip(self.cell_size,
+                                                        self.block_size))
+            blocks = get_tiles(spacing=block_spacing, extent=shifted_extent)
+            yield tile, tuple(blocks)
+
+
     def get_paths(self, dataset):
         """
         Return path generator.
@@ -292,14 +316,14 @@ class Grid(object):
         It is guaranteed that a dataset exists at every path in the
         generator.
         """
-        for tile in self.get_tiles(dataset):
+        for tile, blocks in self.get_tiles_and_blocks(dataset):
             path = self.tile2path(tile)
             if not os.path.exists(path):
                 logger.debug('Create {}'.format(path))
                 self.create(tile)
             else:
                 logger.debug('Update {}'.format(path))
-            yield path
+            yield path, blocks
 
     def get_datasets(self, dataset):
         """
@@ -345,7 +369,6 @@ class Manager(object):
         
 
     def __getitem__(self, level):
-        """ Index is the index to the level, so it is not the level itself. """
         """ Return store corresponding to level. """
         cell_size = tuple(2 * [2 ** level])
         path = os.path.join(self.path, str(level))
@@ -415,7 +438,6 @@ class Manager(object):
         """
         Return appropriate level for dataset.
         """
-
         pixelsize = min(dataset2pixel(dataset=dataset,
                                       projection=self.projection).size)
         return int(math.floor(math.log(pixelsize, 2)))
@@ -449,21 +471,21 @@ class Manager(object):
         for path in paths:
             yield gdal.Open(path)
 
-    def extend(self, newmax):
+    def extend(self, levels):
         """
         Extend levels to include level.
 
         Used if there is data in the pyramid, but the amount of levels
         need to be extended.
         """
-        oldmax = self.levels[-1]
-        levels = range(oldmax + 1, newmax + 1)
-        self.levels.extend(levels)
-        for source in self[oldmax].get_datasets():
+        addlevels = [1 + self.levels[-1] + l for l in range(levels)]
+        for source in self.get_datasets(-1):
             transport = Transport(source)
-            paths = (p for l in levels for p in self[l].get_paths(source))
+            paths = (p for l in addlevels for p in self[l].get_paths(source))
             for path in paths:
-                warp(transport, path)
+                initialize(transport)
+                map(warp, paths)
+        self.levels.extend(addlevels)
 
     def add(self, dataset, **kwargs):
         """ Add a dataset to manager. """
@@ -483,8 +505,6 @@ class Manager(object):
         pool = multiprocessing.Pool(initializer=initialize, initargs=[transport])
         pool.map(warp, paths)
 
-        #initialize(transport)
-        #map(warp, paths)
 
 
     def warpinto(self, dataset):
