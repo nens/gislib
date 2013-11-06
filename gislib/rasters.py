@@ -88,7 +88,7 @@ def dict2dataset(dictionary):
     nodatavalue = dictionary.get('nodatavalue')
     if nodatavalue is not None:
         for i in range(len(array)):
-            dataset.GetRasterBand(i + 1).SetNodataValue(nodatavalue)
+            dataset.GetRasterBand(i + 1).SetNoDataValue(nodatavalue)
     return dataset
 
 
@@ -114,6 +114,12 @@ def get_dtype(dataset):
 def get_shape(dataset):
     """ Return the numpy shape. """
     return dataset.RasterCount, dataset.RasterYSize, dataset.RasterXSize
+
+
+def get_geotransform(extent, width, height):
+    """ Return geotransform tuple. """
+    x1, y1, x2, y2 = extent
+    return x1, (x2 - x1) / width, 0, y2, 0, (y1 - y2) / height
 
 
 def get_shrunk(shrink, shape, geotransform):

@@ -332,10 +332,11 @@ class Grid(object):
         The generator yields only datasets whose extent intersect with
         datasets extent.
         """
-        paths = (self.get_path(tile) for tile in self.get_tiles(dataset))
+        paths = (
+            self.tile2path(tile) for tile in self.get_tiles(dataset))
         for path in paths:
             try:
-                yield gdal.Open(self.get_path(tile))
+                yield gdal.Open(path)
             except RuntimeError:
                 continue
 
@@ -504,8 +505,7 @@ class Manager(object):
         
         pool = multiprocessing.Pool(initializer=initialize, initargs=[transport])
         pool.map(warp, paths)
-
-
+        pool.close()
 
     def warpinto(self, dataset):
         """
@@ -513,16 +513,12 @@ class Manager(object):
 
         Warp tiles from appropriate store into dataset.
         """
-        level = max(self.level[0], self.get_level(dataset))
-        if level in self.levels:
-            return self[level].warpinto(dataset)
-        try:
-            rasters.reproject(
-                source=gdal.Open(self.peakpath),
-                target=dataset,
-            )
-        except RuntimeError:
-            pass
+        level = self.get_level(dataset)
+        if level > self.levels[-1]:
+            level = self.levels[-1]
+        if level < self.levels[0]:
+            level = self.levels[0]
+        return self[level].warpinto(dataset)
 
     def single(self, point):
         """ Return value from lowest level. """
@@ -593,6 +589,10 @@ class Pyramid(stores.BaseStore):
         self.unlock()
         if sync:
             manager.sync()
+
+    def warpinto(self, dataset):
+        """ See manager. """
+        self.manager.warpinto(dataset)
 
     def sync(self):
         return self.manager.sync()
