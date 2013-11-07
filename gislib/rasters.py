@@ -141,6 +141,68 @@ def get_shrunk(shrink, shape, geotransform):
     return dict(shape=shrunk_shape, geotransform=shrunk_geotransform)
 
 
+class Dataset(object):
+    """ Wrapper aroung gdal dataset. """
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.projection=dataset.GetProjection()
+        self.raster_count=dataset.RasterCount
+        self.raster_size=(dataset.RasterYSize, dataset.RasterXSize)
+        self.geo_transform=dataset.GetGeoTransform()
+
+        band = dataset.GetRasterBand(1)
+        self.block_size=band.GetBlockSize()
+        self.data_type=band.DataType
+        self.no_data_value=band.GetNoDataValue()
+
+    def get_offsets(self, block):
+        """ Return offsets tuple. """
+        u1 = block[0] * self.block_size[0]
+        u2 = min(self.raster_size[0], (block[0] + 1) * self.block_size[0])
+        v1 = block[1] * self.block_size[1]
+        v2 = min(self.raster_size[1], (block[1] + 1) * self.block_size[1])
+        return u1, u2, v1, v2
+
+    def read_block(self, block):
+        """ Read a block as a dataset. """
+        # read the data
+        u1, u2, v1, v2 = self.get_offsets(block)
+        band_list = range(1, self.raster_count + 1)
+        array = np.fromstring(self.dataset.ReadRaster(
+            u1, v1, u2 - u1, v2 - v1, band_list=band_list,
+        ), dtype=gdal_array.flip_code(self.data_type))
+        array.shape = self.raster_count, v2 - v1, u2 - u1
+
+        # dataset properties
+        p, a, b, q, c, d = self.geo_transform
+        geo_transform = p + a * u1 + b * v1, a, b, q + c * u1 + d * v1, c, d
+        dataset = dict2dataset(dict(
+            array=array,
+            geotransform=geo_transform,
+            projection=self.projection,
+            nodatavalue=self.no_data_value,
+        ))
+        return dict(dataset=dataset, array=array)
+    
+    def write_block(self, block, array):
+        """ Write a dataset to a block. """
+        u1, u2, v1, v2 = self.get_offsets(block)
+        band_list = range(1, self.raster_count + 1)
+        self.dataset.WriteRaster(
+            u1, v1, u2 - u1, v2 - v1, array.tostring(), band_list=band_list,
+        )
+
+
+
+
+    def get_extent(self, projection=None):
+        pass
+    def get_pixel_size(self, projection=None):
+        pass
+    def geo_transform(self, block=None):
+        pass
+
+
 class SharedMemoryDataset(object):
     """
     Wrapper for a gdal dataset in a shared memory buffer.

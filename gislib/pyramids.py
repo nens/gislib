@@ -45,14 +45,18 @@ def initialize(arg_transport):
 def warp(path_and_blocks):
     """ Warp global transport into specified blocks from dataset at path. """
     path, blocks = path_and_blocks
+
+    # Old version without the blocks
     target = gdal.Open(path, gdal.GA_Update)
-    # After implementing read_block and write_block, to be replaced by:
-    # for i, j in blocks:
-    #     dataset = gdal.Open(path, gdal_GA_Update)
-    #     block = rasters.read_block(dataset, (i, -j))
-    #     transport.warpinto(block)
-    #     rasters.write_block(dataset, (i, -j), block)
     transport.warpinto(target)
+
+    # After implementing read_block and write_block, to be replaced by:
+    #for i, j in blocks:
+        #dataset = rasters.Dataset(gdal.Open(path, gdal.GA_Update))
+        #block = dataset.read_block((i, -j + 1))
+        #transport.warpinto(block['dataset'])
+        #block['dataset'].FlushCache()
+        #dataset.write_block((i, -j), block['array'])
 
 
 def crop(dataset):
@@ -502,6 +506,8 @@ class Manager(object):
         transport = Transport(dataset)
         paths = (p for l in self.levels for p in self[l].get_paths(dataset))
 
+        #initialize(transport)
+        #map(warp, paths)
         pool = multiprocessing.Pool(initializer=initialize, initargs=[transport])
         pool.map(warp, paths)
         pool.close()
