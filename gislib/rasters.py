@@ -8,7 +8,6 @@ from __future__ import division
 import datetime
 import json
 import logging
-import math
 import multiprocessing
 import os
 
@@ -111,6 +110,11 @@ def get_dtype(dataset):
     ))
 
 
+def get_no_data_value(dataset):
+    """ Return the no data value from the first band. """
+    return dataset.GetRasterBand(1).GetNoDataValue()
+
+
 def get_shape(dataset):
     """ Return the numpy shape. """
     return dataset.RasterCount, dataset.RasterYSize, dataset.RasterXSize
@@ -122,38 +126,19 @@ def get_geotransform(extent, width, height):
     return x1, (x2 - x1) / width, 0, y2, 0, (y1 - y2) / height
 
 
-def get_shrunk(shrink, shape, geotransform):
-    """ Get rescaled shape for a rescaled array. """
-    # Shrink shape, but elements must remain integer
-    shrunk_shape = ((shape[0],) +
-                    tuple(int(math.ceil(s / shrink)) for s in shape[1:]))
-
-    # Increase cellsize according to shape ratio
-    xfactor = shape[2] / shrunk_shape[2]
-    yfactor = shape[1] / shrunk_shape[1]
-    shrunk_geotransform = (geotransform[0],
-                           geotransform[1] * xfactor,
-                           geotransform[2] * yfactor,
-                           geotransform[3],
-                           geotransform[4] * xfactor,
-                           geotransform[5] * yfactor)
-
-    return dict(shape=shrunk_shape, geotransform=shrunk_geotransform)
-
-
 class Dataset(object):
     """ Wrapper aroung gdal dataset. """
     def __init__(self, dataset):
         self.dataset = dataset
-        self.projection=dataset.GetProjection()
-        self.raster_count=dataset.RasterCount
-        self.raster_size=(dataset.RasterYSize, dataset.RasterXSize)
-        self.geo_transform=dataset.GetGeoTransform()
+        self.projection = dataset.GetProjection()
+        self.raster_count = dataset.RasterCount
+        self.raster_size = (dataset.RasterYSize, dataset.RasterXSize)
+        self.geo_transform = dataset.GetGeoTransform()
 
         band = dataset.GetRasterBand(1)
-        self.block_size=band.GetBlockSize()
-        self.data_type=band.DataType
-        self.no_data_value=band.GetNoDataValue()
+        self.block_size = band.GetBlockSize()
+        self.data_type = band.DataType
+        self.no_data_value = band.GetNoDataValue()
 
     def get_offsets(self, block):
         """ Return offsets tuple. """
@@ -182,8 +167,14 @@ class Dataset(object):
             projection=self.projection,
             nodatavalue=self.no_data_value,
         ))
+        print('...')
+        print(block)
+        print(u1, u2, v1, v2)
+        print(geo_transform)
+        print(dataset.GetGeoTransform())
+        print('...')
         return dict(dataset=dataset, array=array)
-    
+
     def write_block(self, block, array):
         """ Write a dataset to a block. """
         u1, u2, v1, v2 = self.get_offsets(block)
@@ -192,14 +183,19 @@ class Dataset(object):
             u1, v1, u2 - u1, v2 - v1, array.tostring(), band_list=band_list,
         )
 
-
-
-
     def get_extent(self, projection=None):
         pass
+
     def get_pixel_size(self, projection=None):
+        """ Get the size of a pixel, assuming square. """
+        return self.geo_transform[1], -self.geo_transform[5]
+
+    def get_pixel_geometry(indices=(0, 0), projection=None):
+        """ Return a geometry corresponding to a raster pixel. """
         pass
-    def geo_transform(self, block=None):
+
+    def get_outline_geometry(projection=None):
+        """ Return a polygon corresponding to the outline of the raster. """
         pass
 
 
@@ -207,20 +203,13 @@ class SharedMemoryDataset(object):
     """
     Wrapper for a gdal dataset in a shared memory buffer.
     """
-    def __init__(self, dataset, shrink=1):
-        """ Initialize a dataset based on """
+    def __init__(self, dataset):
+        """ Initialize a dataset. """
         dtype = get_dtype(dataset)
-        if shrink == 1:
-            shape = get_shape(dataset)
-            geotransform = dataset.GetGeoTransform()
-        else:
-            shrunk = get_shrunk(
-                shrink=shrink,
-                shape=get_shape(dataset),
-                geotransform=dataset.GetGeoTransform(),
-            )
-            shape = shrunk['shape']
-            geotransform = shrunk['geotransform']
+        shape = get_shape(dataset)
+        no_data_value = get_no_data_value(dataset)
+
+        geotransform = dataset.GetGeoTransform()
 
         # Create underlying numpy array with data in shared buffer
         size = shape[0] * shape[1] * shape[2] * dtype.itemsize
@@ -229,17 +218,13 @@ class SharedMemoryDataset(object):
         ).reshape(*shape)
 
         # Create a dataset from it
-        self.dataset = array2dataset(self.array)
-        self.dataset.SetGeoTransform(geotransform)
-        self.dataset.SetProjection(dataset.GetProjection())
+        self.dataset = dict2dataset(dict(array=self.array,
+                                    geotransform=geotransform,
+                                    nodatavalue=no_data_value,
+                                    projection=dataset.GetProjection()))
 
-        if shrink == 1:
-            # Directly read the dataset into the shared memory array
-            dataset.ReadAsArray(buf_obj=self.array)
-        else:
-            # Use reproject to fill the shrunk dataset
-            reproject(source=dataset, target=self.dataset)
-            self.dataset.FlushCache()
+        # Directly read the dataset into the shared memory array
+        dataset.ReadAsArray(buf_obj=self.array)
 
 
 class Geometry(object):
@@ -370,7 +355,6 @@ class Pyramid(AbstractGeoContainer):
     """
     Add and get geodata to and from a paramid of datafiles.
     """
-
     _LOCKFILE = 'pyramid.lock'
     CONFIG_FILE = 'pyramid.json'
     CONFIG_ATTRIBUTES = ['algorithm',

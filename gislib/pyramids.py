@@ -25,15 +25,17 @@ from gislib import projections
 from gislib import rasters
 from gislib import stores
 from gislib import vectors
+from gislib import utils
 
 gdal.UseExceptions()
 ogr.UseExceptions()
 osr.UseExceptions()
 
 logger = logging.getLogger(__name__)
+transport = None
 
 GDAL_DRIVER_GTIFF = gdal.GetDriverByName(b'gtiff')
-TIMEOUT = 60  # seconds
+TIMEOUT = 5  # seconds
 
 
 def initialize(arg_transport):
@@ -45,18 +47,22 @@ def initialize(arg_transport):
 def warp(path_and_blocks):
     """ Warp global transport into specified blocks from dataset at path. """
     path, blocks = path_and_blocks
-
     # Old version without the blocks
-    target = gdal.Open(path, gdal.GA_Update)
-    transport.warpinto(target)
-    
-    # After implementing read_block and write_block, to be replaced by:
-    #for i, j in blocks:
-        #dataset = rasters.Dataset(gdal.Open(path, gdal.GA_Update))
-        #block = dataset.read_block((i, -j + 1))
-        #transport.warpinto(block['dataset'])
-        #block['dataset'].FlushCache()
-        #dataset.write_block((i, -j), block['array'])
+    #target = gdal.Open(path, gdal.GA_Update)
+    #rasters.reproject(source=transport.dataset, target=target)
+
+    # New version with blockwise updating
+    for i, j in blocks:
+        dataset = rasters.Dataset(gdal.Open(path, gdal.GA_Update))
+        block = dataset.read_block((i, -j - 1))
+        rasters.reproject(source=transport.dataset, target=block['dataset'])
+        block['dataset'].FlushCache()
+        rasters.reproject(source=transport.dataset, target=block['dataset'])
+        block['dataset'].FlushCache()
+        #from pylab import *
+        #imshow(block['array'][0])
+        #show()
+        dataset.write_block((i, -j - 1), block['array'])
 
 
 def crop(dataset):
@@ -70,7 +76,7 @@ def crop(dataset):
     no_data_value = dataset.GetRasterBand(1).GetNoDataValue()
     indices = np.where(~np.equal(array, no_data_value))
     w1, w2, v1, v2, u1, u2 = (m for i in indices for m in (i.min(), i.max()))
-    
+
     # determine new geotransform
     p, a, b, q, c, d = np.array(dataset.GetGeoTransform())
     points = (u1, u2), (v1, v2)
@@ -86,7 +92,7 @@ def crop(dataset):
         cropped.GetRasterBand(i + 1).SetNoDataValue(no_data_value)
 
     return cropped
-    
+
 
 def dataset2outline(dataset, projection=None):
     """
@@ -205,44 +211,6 @@ class LockError(Exception):
     pass
 
 
-class Transport(object):
-    """
-    Simple in-shared-memory pyramid designed to fill the bigger pyramid
-    storage.
-    """
-    def __init__(self, dataset, stop=256):
-        """
-        Add overviews of the dataset until the overview is smaller
-        than given size.
-        """
-        self.projection = dataset.GetProjection()
-        self.projection = dataset.GetProjection()
-        self.levels = [rasters.SharedMemoryDataset(dataset)]
-        while max(self.levels[-1].array.shape[1:]) > stop:
-            self.levels.append(rasters.SharedMemoryDataset(
-                dataset=self.levels[-1].dataset, shrink=2,
-            ))
-
-        self.pixelsizes = tuple(max(dataset2pixel(l.dataset).size) 
-                                for l in self.levels)
-        # Points for numpy interpolation, used for get_level method.
-        self.points = zip(*tuple((s, i + o) 
-                                 for i, s in enumerate(self.pixelsizes[1:]) 
-                                 for o in (0, 1)))
-
-    def get_level(self, dataset):
-        """ Return the appropriate level for reprojection into dataset. """
-        pixelsize = min(dataset2pixel(dataset=dataset,
-                                      projection=self.projection).size)
-        return self.levels[int(np.interp(pixelsize, *self.points))]
-
-    def warpinto(self, dataset):
-        """
-        Reproject appropriate level from self into dataset.
-        """
-        rasters.reproject(self.get_level(dataset).dataset, dataset)
-
-
 class Grid(object):
     """
     Represent a grid of rastertiles.
@@ -263,6 +231,15 @@ class Grid(object):
             self.spacing[1] * (tile[1] + 1),
             0,
             -self.cell_size[1],
+        )
+
+    def tile2extent(self, tile):
+        """ Return tile extent. """
+        return (
+            self.spacing[0] * tile[0],
+            self.spacing[1] * tile[1],
+            self.spacing[0] * (tile[0] + 1),
+            self.spacing[1] * (tile[1] + 1),
         )
 
     def tile2path(self, tile):
@@ -300,18 +277,25 @@ class Grid(object):
     def get_tiles_and_blocks(self, dataset):
         """ Return generator of tile and block indices. """
         tile_spacing = self.spacing
-        original_extent = dataset2outline(dataset=dataset,
-                                          projection=self.projection).extent
-        x1, y1, x2, y2 = original_extent                                          
-        for tile in get_tiles(spacing=tile_spacing, extent=original_extent):
-            left, top = (s * (t + i)
-                         for s, t, i in zip(tile_spacing, tile, (0,1)))
-            shifted_extent = x1 - left, y1 - top, x2 - left, y2 - top
+        dataset_extent = dataset2outline(dataset=dataset,
+                                         projection=self.projection).extent
+
+        for tile in get_tiles(spacing=tile_spacing, extent=dataset_extent):
+            tile_extent = self.tile2extent(tile)
+            intersection_extent = utils.get_extent_intersection(
+                extent1=dataset_extent, extent2=tile_extent,
+            )
+            shifted_extent = (
+                intersection_extent[0] - tile_extent[0],
+                intersection_extent[1] - tile_extent[3],
+                intersection_extent[2] - tile_extent[0],
+                intersection_extent[3] - tile_extent[3],
+            )
             block_spacing = tuple(c * b for c, b in zip(self.cell_size,
                                                         self.block_size))
-            blocks = get_tiles(spacing=block_spacing, extent=shifted_extent)
-            yield tile, tuple(blocks)
-
+            blocks = tuple(get_tiles(spacing=block_spacing,
+                                     extent=shifted_extent))
+            yield tile, blocks
 
     def get_paths(self, dataset):
         """
@@ -371,7 +355,6 @@ class Manager(object):
         # Determine config first toplevel dataset.
         topleveldatasets = self.get_datasets(-1)
         self.__dict__.update(get_config(topleveldatasets.next()))
-        
 
     def __getitem__(self, level):
         """ Return store corresponding to level. """
@@ -379,7 +362,7 @@ class Manager(object):
         path = os.path.join(self.path, str(level))
         kwargs = dict(
             block_size=self.block_size,
-            cell_size=cell_size, 
+            cell_size=cell_size,
             data_type=self.data_type,
             no_data_value=self.no_data_value,
             path=path,
@@ -419,7 +402,7 @@ class Manager(object):
         x1, y1, x2, y2 = zip(*extents)
         x1, y1, x2, y2 = min(x1), min(y1), max(x2), max(y2)
         geotransform = x1, (x2 - x1) / 256, 0, y2, 0, (y1 - y2) / 256
-        
+
         # create
         fd, temppath = tempfile.mkstemp(dir=self.path, prefix='.pyramid.tmp.')
         dataset = GDAL_DRIVER_GTIFF.Create(temppath,
@@ -462,11 +445,11 @@ class Manager(object):
             combinedsize = max(x2) - min(x1), max(y2) - min(y1)
         pixelsize = max(d / b for d, b in zip(combinedsize, self.block_size))
         return int(math.ceil(math.log(pixelsize)))
-        
+
     def get_datasets(self, index):
-        """ 
+        """
         Return all datasets from a path.
-        
+
         Note that it assumes a two-deep directory structure for the level.
         """
         level = self.levels[index]
@@ -485,7 +468,7 @@ class Manager(object):
         """
         addlevels = [1 + self.levels[-1] + l for l in range(levels)]
         for source in self.get_datasets(-1):
-            transport = Transport(source)
+            transport = rasters.SharedMemoryDataset(source)
             paths = (p for l in addlevels for p in self[l].get_paths(source))
             for path in paths:
                 initialize(transport)
@@ -504,14 +487,16 @@ class Manager(object):
             self.bootstrap(dataset=dataset, overrides=kwargs)
 
         # do the data addition
-        transport = Transport(dataset)
+        transport = rasters.SharedMemoryDataset(dataset)
         paths = (p for l in self.levels for p in self[l].get_paths(dataset))
-        
-        #initialize(transport)
-        #map(warp, paths)
-        pool = multiprocessing.Pool(initializer=initialize, initargs=[transport])
-        pool.map(warp, paths)
-        pool.close()
+
+        initialize(transport)
+        map(warp, paths)
+        #pool = multiprocessing.Pool(
+            #initializer=initialize, initargs=[transport]
+        #)
+        #pool.map(warp, paths)
+        #pool.close()
 
     def warpinto(self, dataset):
         """
