@@ -66,7 +66,7 @@ def crop(dataset):
     no_data_value = dataset.GetRasterBand(1).GetNoDataValue()
     indices = np.where(~np.equal(array, no_data_value))
     w1, w2, v1, v2, u1, u2 = (m for i in indices for m in (i.min(), i.max()))
-    
+
     # determine new geotransform
     p, a, b, q, c, d = np.array(dataset.GetGeoTransform())
     points = (u1, u2), (v1, v2)
@@ -82,7 +82,7 @@ def crop(dataset):
         cropped.GetRasterBand(i + 1).SetNoDataValue(no_data_value)
 
     return cropped
-    
+
 
 def dataset2outline(dataset, projection=None):
     """
@@ -219,11 +219,11 @@ class Transport(object):
                 dataset=self.levels[-1].dataset, shrink=2,
             ))
 
-        self.pixelsizes = tuple(max(dataset2pixel(l.dataset).size) 
+        self.pixelsizes = tuple(max(dataset2pixel(l.dataset).size)
                                 for l in self.levels)
         # Points for numpy interpolation, used for get_level method.
-        self.points = zip(*tuple((s, i + o) 
-                                 for i, s in enumerate(self.pixelsizes[1:]) 
+        self.points = zip(*tuple((s, i + o)
+                                 for i, s in enumerate(self.pixelsizes[1:])
                                  for o in (0, 1)))
 
     def get_level(self, dataset):
@@ -298,7 +298,7 @@ class Grid(object):
         tile_spacing = self.spacing
         original_extent = dataset2outline(dataset=dataset,
                                           projection=self.projection).extent
-        x1, y1, x2, y2 = original_extent                                          
+        x1, y1, x2, y2 = original_extent
         for tile in get_tiles(spacing=tile_spacing, extent=original_extent):
             left, top = (s * (t + i)
                          for s, t, i in zip(tile_spacing, tile, (0,1)))
@@ -367,7 +367,6 @@ class Manager(object):
         # Determine config first toplevel dataset.
         topleveldatasets = self.get_datasets(-1)
         self.__dict__.update(get_config(topleveldatasets.next()))
-        
 
     def __getitem__(self, level):
         """ Return store corresponding to level. """
@@ -375,7 +374,7 @@ class Manager(object):
         path = os.path.join(self.path, str(level))
         kwargs = dict(
             block_size=self.block_size,
-            cell_size=cell_size, 
+            cell_size=cell_size,
             data_type=self.data_type,
             no_data_value=self.no_data_value,
             path=path,
@@ -415,7 +414,7 @@ class Manager(object):
         x1, y1, x2, y2 = zip(*extents)
         x1, y1, x2, y2 = min(x1), min(y1), max(x2), max(y2)
         geotransform = x1, (x2 - x1) / 256, 0, y2, 0, (y1 - y2) / 256
-        
+
         # create
         fd, temppath = tempfile.mkstemp(dir=self.path, prefix='.pyramid.tmp.')
         dataset = GDAL_DRIVER_GTIFF.Create(temppath,
@@ -458,11 +457,11 @@ class Manager(object):
             combinedsize = max(x2) - min(x1), max(y2) - min(y1)
         pixelsize = max(d / b for d, b in zip(combinedsize, self.block_size))
         return int(math.ceil(math.log(pixelsize)))
-        
+
     def get_datasets(self, index):
-        """ 
+        """
         Return all datasets from a path.
-        
+
         Note that it assumes a two-deep directory structure for the level.
         """
         level = self.levels[index]
@@ -502,7 +501,7 @@ class Manager(object):
         # do the data addition
         transport = Transport(dataset)
         paths = (p for l in self.levels for p in self[l].get_paths(dataset))
-        
+
         pool = multiprocessing.Pool(initializer=initialize, initargs=[transport])
         pool.map(warp, paths)
         pool.close()
