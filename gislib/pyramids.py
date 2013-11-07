@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 transport = None
 
 GDAL_DRIVER_GTIFF = gdal.GetDriverByName(b'gtiff')
-TIMEOUT = 5  # seconds
+TIMEOUT = 60  # seconds
 
 
 def initialize(arg_transport):
@@ -48,21 +48,21 @@ def warp(path_and_blocks):
     """ Warp global transport into specified blocks from dataset at path. """
     path, blocks = path_and_blocks
     # Old version without the blocks
-    #target = gdal.Open(path, gdal.GA_Update)
-    #rasters.reproject(source=transport.dataset, target=target)
+    target = gdal.Open(path, gdal.GA_Update)
+    rasters.reproject(source=transport.dataset, target=target)
 
     # New version with blockwise updating
-    for i, j in blocks:
-        dataset = rasters.Dataset(gdal.Open(path, gdal.GA_Update))
-        block = dataset.read_block((i, -j - 1))
-        rasters.reproject(source=transport.dataset, target=block['dataset'])
-        block['dataset'].FlushCache()
-        rasters.reproject(source=transport.dataset, target=block['dataset'])
-        block['dataset'].FlushCache()
+    #for i, j in blocks:
+        #dataset = rasters.Dataset(gdal.Open(path, gdal.GA_Update))
+        #block = dataset.read_block((i, -j - 1))
+        #rasters.reproject(source=transport.dataset, target=block['dataset'])
+        #block['dataset'].FlushCache()
+        #rasters.reproject(source=transport.dataset, target=block['dataset'])
+        #block['dataset'].FlushCache()
         #from pylab import *
         #imshow(block['array'][0])
         #show()
-        dataset.write_block((i, -j - 1), block['array'])
+        #dataset.write_block((i, -j - 1), block['array'])
 
 
 def crop(dataset):
@@ -490,13 +490,13 @@ class Manager(object):
         transport = rasters.SharedMemoryDataset(dataset)
         paths = (p for l in self.levels for p in self[l].get_paths(dataset))
 
-        initialize(transport)
-        map(warp, paths)
-        #pool = multiprocessing.Pool(
-            #initializer=initialize, initargs=[transport]
-        #)
-        #pool.map(warp, paths)
-        #pool.close()
+        #initialize(transport)
+        #map(warp, paths)
+        pool = multiprocessing.Pool(
+            initializer=initialize, initargs=[transport]
+        )
+        pool.map(warp, paths)
+        pool.close()
 
     def warpinto(self, dataset):
         """
