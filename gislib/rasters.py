@@ -167,12 +167,6 @@ class Dataset(object):
             projection=self.projection,
             nodatavalue=self.no_data_value,
         ))
-        print('...')
-        print(block)
-        print(u1, u2, v1, v2)
-        print(geo_transform)
-        print(dataset.GetGeoTransform())
-        print('...')
         return dict(dataset=dataset, array=array)
 
     def write_block(self, block, array):
@@ -182,6 +176,9 @@ class Dataset(object):
         self.dataset.WriteRaster(
             u1, v1, u2 - u1, v2 - v1, array.tostring(), band_list=band_list,
         )
+        # self.dataset.FlushCache() wasn't good enough. This method
+        # closes and reopens the dataset to really flush any cache.
+        self.dataset = gdal.Open(self.dataset.GetFileList()[0], gdal.GA_Update)
 
     def get_extent(self, projection=None):
         pass

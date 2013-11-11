@@ -7,6 +7,8 @@ Tests:
 Documentation:
     - How to use the Pyramid
 
+Make blockwise updating the responsibility of some special reproject function
+
 Grid redesign:
     - Standalone grid, autodetecting properties from path
     - Support for arbitrary offsets
