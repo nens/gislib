@@ -406,8 +406,9 @@ class Manager(object):
         """ Bootstrap manager for a new pyramid. """
         self.__dict__.update(get_config(dataset))
         self.__dict__.update(overrides)
-        self.levels = range(self.get_level(dataset),
-                            self.get_toplevel(dataset) + 1)
+        lowest_level = self.get_level(dataset)
+        highest_level = max(self.get_toplevel(dataset), lowest_level)
+        self.levels = range(lowest_level, highest_level + 1)
 
     def sync(self):
         """
