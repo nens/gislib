@@ -76,9 +76,6 @@ def pyramid(target_path, source_paths, block_size,
     """ Create or update pyramid. """
     pyramid = pyramids.Pyramid(path=target_path)
 
-    if not source_paths:
-        return pyramid.add()
-
     kwargs = {}
     if block_size:
         kwargs.update(block_size=tuple(int(t) for t in block_size))
