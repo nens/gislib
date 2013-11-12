@@ -113,8 +113,22 @@ class BaseStore(object):
 
         return distances, values
 
-    def get_data_for_point(self, wkb, crs, size):
-        pass
+    def get_data_for_point(self, wkb, crs, size=None):
+        """get_data_for_point(
+               ogr.CreateGeometryFromWkt('POINT(3 4)').ExportToWkb(),
+               projections.RD)
+
+        Size is ignored.
+        """
+
+        # Reproject point into dataset's projection
+        transformation = projections.get_coordinate_transformation(
+            crs, self.projection)
+        wkb.Transform(transformation)
+
+        # Fetch single point from dataset
+        return self.fetch_single_point(wkb.x, wkb.y)
+
 
     HANDLERS = {
         ogr.wkbPolygon: get_data_for_polygon,

@@ -5,7 +5,7 @@ Changelog of gislib
 0.2.13 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Implement get_value for pyramids.
 
 
 0.2.12 (2013-10-17)

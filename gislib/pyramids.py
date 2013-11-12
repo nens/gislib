@@ -55,6 +55,17 @@ def warp(path_and_blocks):
         dataset.write_block((i, -j - 1), block['array'])
 
 
+def point_from_dataset(dataset, point):
+    x, y = point
+    p, a, b, q, c, d = dataset.GetGeoTransform()
+    minv = np.linalg.inv([[a, b], [c, d]])
+    u, v = np.dot(minv, [x - p, y - q])
+    band_list = range(1, dataset.RasterCount + 1)
+    data = dataset.ReadRaster(int(u), int(v), 1, 1, band_list=band_list)
+    data_type = gdal_array.flip_code(dataset.GetRasterBand(1).DataType)
+    return np.fromstring(data, dtype=data_type)
+
+
 def crop(dataset):
     """
     Return cropped memory copy of dataset.
@@ -197,6 +208,12 @@ def get_tiles(spacing, extent):
             yield x, y
 
 
+def get_tile(spacing, point):
+    x, y = point
+    extent = x, y, x, y
+    return next(get_tiles(spacing, extent))
+
+
 class LockError(Exception):
     pass
 
@@ -318,6 +335,17 @@ class Grid(object):
             except RuntimeError:
                 continue
 
+    def fetch_single_point(self, x, y):
+        tile = get_tile(self.spacing, (x, y))
+        path = self.tile2path(tile)
+        try:
+            dataset = gdal.Open(path)
+        except RuntimeError:
+            return [None] * self.rastercount
+
+        values = point_from_dataset(dataset, self.data_type, (x, y))
+        return np.ma.masked_equal(values, self.no_data_value).tolist()
+
     def warpinto(self, dataset):
         """ Warp appropriate tiles into dataset. """
         for source in self.get_datasets(dataset):
@@ -436,6 +464,10 @@ class Manager(object):
         pixelsize = max(d / b for d, b in zip(combinedsize, self.block_size))
         return int(math.ceil(math.log(pixelsize)))
 
+    def get_bottomlevel(self):
+        """Return the lowest level."""
+        return self[self.levels[0]]
+
     def get_datasets(self, index):
         """
         Return all datasets from a path.
@@ -531,6 +563,15 @@ class Pyramid(stores.BaseStore):
             expires = now + TIMEOUT
             self._manager = dict(expires=expires, manager=manager)
         return self._manager['manager']
+
+    @property
+    def projection(self):
+        return self.manager.projection
+
+    def fetch_single_point(self, x, y):
+        """X and Y are in the pyramid's projection."""
+        grid = self.manager.get_bottomlevel()
+        return grid.fetch_single_point(x, y)
 
     @property
     def lockpath(self):
