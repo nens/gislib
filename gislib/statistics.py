@@ -55,14 +55,10 @@ def get_curve(array, bins=256):
     return curve_x, curve_y
 
 
-def get_landuse_counts(array, bins=256):
+def get_counts(array, bins=256):
     """ 
 
-    TODO: Retrieve colo(u)rs and labels from metadata file
-          so this file does not have to have the LANDUSE global
-          and for make benefit of genericity.
-
-    Return array with counts of LANDUSE labels.
+    Return array with counts of classified raster.
 
     """
     bins = np.arange(0, bins)
