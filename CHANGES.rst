@@ -5,8 +5,9 @@ Changelog of gislib
 0.2.13 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Added counts for landuse raster.
 
+- Added colors to nudge an extra module ;).
 
 0.2.12 (2013-10-17)
 -------------------

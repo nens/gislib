@@ -7,6 +7,7 @@ from __future__ import division
 
 from osgeo import gdal
 from osgeo import osr
+
 import numpy as np
 
 from gislib import projections
@@ -52,3 +53,26 @@ def get_curve(array, bins=256):
     curve_x = np.arange(0, 101)
     curve_y = np.interp(curve_x, percentile_x, percentile_y)
     return curve_x, curve_y
+
+
+def get_counts(array, bins=256):
+    """ 
+
+    Return array with counts of classified raster.
+
+    """
+    bins = np.arange(0, bins)
+    histograms = [np.histogram(d.compressed(), bins)[0] for d in array]
+    nonzeros = [h.nonzero() for h in histograms]
+    nbins = [bins[:-1][n] for n in nonzeros]
+    nhistograms = [h[n] for n, h in zip(nonzeros, histograms)]
+    # Determine the ordering
+    argsorts = [h.argsort() for h in nhistograms]
+    arg10 = [a[:-10:-1] for a in argsorts]
+    argrest = [a[-10::-1] for a in argsorts]
+    # Use it to group
+    rests = [h[argrest].sum() for h, a in zip(nhistograms, argsorts)]
+    pairs = [np.array([b[arg10], h[arg10]]).transpose()
+             for b, h, a in zip(nbins, nhistograms, argsorts)]
+
+    return pairs, rests
