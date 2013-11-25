@@ -42,7 +42,11 @@ def get_curve(array, bins=256):
     """
     TODO Better name.
 
-    Return array with graph points.
+    Return array with graph points (in Dutch, maaiveldcurve)
+
+    :param array: 3d numpy masked array
+    :param bins: number of histogram bins
+    :returns: curve_x, list of x values; curve_y, list of y values
     """
     # compute histogram
     histogram, edges = np.histogram(array.compressed(), bins)
@@ -56,9 +60,14 @@ def get_curve(array, bins=256):
 
 
 def get_counts(array, bins=256):
-    """ 
+    """
 
     Return array with counts of classified raster.
+
+    :param array: 3d numpy masked array
+    :param bins: number of histogram bins
+    :returns: pairs, list of top 10 (class, count);
+              rest, list of rest (class, count)
 
     """
     bins = np.arange(0, bins)
