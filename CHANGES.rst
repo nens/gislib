@@ -7,6 +7,8 @@ Changelog of gislib
 
 - Added counts for landuse raster.
 
+- Implement get_value for pyramids.
+
 - Added colors to nudge an extra module ;).
 
 0.2.12 (2013-10-17)

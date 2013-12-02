@@ -29,26 +29,26 @@ def get_parser():
     parser = argparse.ArgumentParser(
         description=description
     )
-    parser.add_argument('targetpath', metavar='TARGET')
-    parser.add_argument('sourcepaths',
+    parser.add_argument('target_path', metavar='TARGET')
+    parser.add_argument('source_paths',
                         nargs='*',
                         metavar='SOURCE')
-    parser.add_argument('-b', '--blocksize',
+    parser.add_argument('-b', '--block-size',
                         nargs=2,
                         metavar=('WIDTH', 'HEIGHT'))
-    parser.add_argument('-d', '--datatype')
-    parser.add_argument('-n', '--nodatavalue')
+    parser.add_argument('-d', '--data-type')
+    parser.add_argument('-n', '--no-data-value')
     parser.add_argument('-p', '--projection')
-    parser.add_argument('-t', '--tilesize',
+    parser.add_argument('-r', '--raster-size',
                         nargs=2,
                         metavar=('WIDTH', 'HEIGHT'))
     return parser
 
 
-def rounded(sourcepath, precision=2):
+def rounded(source_path, precision=2):
     """ Return rounded memory dataset. """
     # Read
-    source = gdal.Open(sourcepath)
+    source = gdal.Open(source_path)
     target = MEM_DRIVER.CreateCopy('', source)
 
     # Round
@@ -71,32 +71,29 @@ def progress(count, total):
     ))
 
 
-def pyramid(targetpath, sourcepaths, blocksize,
-            datatype, nodatavalue, projection, tilesize):
+def pyramid(target_path, source_paths, block_size,
+            data_type, no_data_value, projection, raster_size):
     """ Create or update pyramid. """
-    pyramid = pyramids.Pyramid(path=targetpath)
-
-    if not sourcepaths:
-        return pyramid.add()
+    pyramid = pyramids.Pyramid(path=target_path)
 
     kwargs = {}
-    if blocksize:
-        kwargs.update(blocksize=tuple(int(t) for t in blocksize))
-    if datatype:
-        kwargs.update(datatype=gdal.GetDataTypeByName(datatype))
-    if nodatavalue:
-        kwargs.update(nodatavalue=float(nodatavalue))
+    if block_size:
+        kwargs.update(block_size=tuple(int(t) for t in block_size))
+    if data_type:
+        kwargs.update(data_type=gdal.GetDataTypeByName(data_type))
+    if no_data_value:
+        kwargs.update(no_data_value=float(no_data_value))
     if projection:
         kwargs.update(projection=projection)
-    if tilesize:
-        kwargs.update(tilesize=tuple(int(t) for t in tilesize))
+    if raster_size:
+        kwargs.update(raster_size=tuple(int(t) for t in raster_size))
 
-    total = len(sourcepaths)
-    for count, sourcepath in enumerate(sourcepaths):
+    total = len(source_paths)
+    for count, source_path in enumerate(source_paths):
         progress(count=count, total=total)
-        logger.debug('Add: {}'.format(sourcepath))
-        #dataset = gdal.Open(sourcepath)
-        dataset = rounded(sourcepath)
+        logger.debug('Add: {}'.format(source_path))
+        #dataset = gdal.Open(source_path)
+        dataset = rounded(source_path)
         pyramid.add(dataset, sync=False, **kwargs)
     progress(count=total, total=total)
     pyramid.sync()

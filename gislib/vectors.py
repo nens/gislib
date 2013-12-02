@@ -10,6 +10,8 @@ from osgeo import ogr
 
 import numpy as np
 
+from gislib import projections
+
 
 def array2polygon(array):
     """
@@ -83,6 +85,15 @@ class Geometry(object):
     """ Wrapper around ogr geometry for working with extents. """
     def __init__(self, geometry):
         self.geometry = geometry
+
+    def transform(self, source, target):
+        """
+        Transform geometry from source projection to target projection.
+        """
+        transformation = projections.get_coordinate_transformation(
+            source=source, target=target,
+        )
+        self.geometry.Transform(transformation)
 
     @classmethod
     def fromextent(cls, x1, y1, x2, y2):

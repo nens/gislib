@@ -44,6 +44,14 @@ def get_spatial_reference(projection):
     return sr
 
 
+def get_coordinate_transformation(source, target):
+    """ Return a coordinate tranformation. """
+    return osr.CoordinateTransformation(
+        get_spatial_reference(source),
+        get_spatial_reference(target),
+    )
+
+
 def get_wkt(projection):
     """ Convenience function. """
     return get_spatial_reference(projection).ExportToWkt()

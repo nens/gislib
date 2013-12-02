@@ -8,6 +8,7 @@ from __future__ import division
 import datetime
 import json
 import logging
+import multiprocessing
 import os
 
 from osgeo import gdal
@@ -22,7 +23,7 @@ gdal.UseExceptions()
 osr.UseExceptions()
 
 
-def array2dataset(array, extent=None, crs=None):
+def array2dataset(array):
     """
     Return gdal dataset.
 
@@ -61,16 +62,32 @@ def array2dataset(array, extent=None, crs=None):
     )
     # Acces the array memory as gdal dataset
     dataset = gdal.Open(dataset_name, gdal.GA_Update)
-    
-    # Add georeferencing based on extent and projection
-    if extent is not None:
-        x1, y1, x2, y2 = extent
-        geotransform = (x1, (x2 - x1) / array.shape[-1], 0,
-                        y2, 0, (y1 - y2) / array.shape[-2])
-        dataset.SetGeoTransform(geotransform)
-    if crs is not None:
-        dataset.SetProjection(projections.get_wkt(crs))
+    return dataset
 
+
+def dict2dataset(dictionary):
+    """
+    Like array2dataset, but set additional properties on the dataset.
+
+    Dictionary must contain 'array' and may contain: 'geotransform',
+    'projection', 'nodatavalue'
+    """
+    # dataset
+    array = dictionary['array']
+    dataset = array2dataset(array)
+    # geotransform
+    geotransform = dictionary.get('geotransform')
+    if geotransform is not None:
+        dataset.SetGeoTransform(geotransform)
+    # projection
+    projection = dictionary.get('projection')
+    if projection is not None:
+        dataset.SetProjection(projection)
+    # nodatavalue
+    nodatavalue = dictionary.get('nodatavalue')
+    if nodatavalue is not None:
+        for i in range(len(array)):
+            dataset.GetRasterBand(i + 1).SetNoDataValue(nodatavalue)
     return dataset
 
 
@@ -84,6 +101,127 @@ def reproject(source, target, algorithm=gdal.GRA_NearestNeighbour):
         0.0,
         0.125,
     )
+
+
+def get_dtype(dataset):
+    """ Return the numpy dtype. """
+    return np.dtype(gdal_array.flip_code(
+        dataset.GetRasterBand(1).DataType,
+    ))
+
+
+def get_no_data_value(dataset):
+    """ Return the no data value from the first band. """
+    return dataset.GetRasterBand(1).GetNoDataValue()
+
+
+def get_shape(dataset):
+    """ Return the numpy shape. """
+    return dataset.RasterCount, dataset.RasterYSize, dataset.RasterXSize
+
+
+def get_geotransform(extent, width, height):
+    """ Return geotransform tuple. """
+    x1, y1, x2, y2 = extent
+    return x1, (x2 - x1) / width, 0, y2, 0, (y1 - y2) / height
+
+
+class Dataset(object):
+    """ Wrapper aroung gdal dataset. """
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.projection = dataset.GetProjection()
+        self.raster_count = dataset.RasterCount
+        self.raster_size = (dataset.RasterYSize, dataset.RasterXSize)
+        self.geo_transform = dataset.GetGeoTransform()
+
+        band = dataset.GetRasterBand(1)
+        self.block_size = band.GetBlockSize()
+        self.data_type = band.DataType
+        self.no_data_value = band.GetNoDataValue()
+
+    def get_offsets(self, block):
+        """ Return offsets tuple. """
+        u1 = block[0] * self.block_size[0]
+        u2 = min(self.raster_size[0], (block[0] + 1) * self.block_size[0])
+        v1 = block[1] * self.block_size[1]
+        v2 = min(self.raster_size[1], (block[1] + 1) * self.block_size[1])
+        return u1, u2, v1, v2
+
+    def read_block(self, block):
+        """ Read a block as a dataset. """
+        # read the data
+        u1, u2, v1, v2 = self.get_offsets(block)
+        band_list = range(1, self.raster_count + 1)
+        array = np.fromstring(self.dataset.ReadRaster(
+            u1, v1, u2 - u1, v2 - v1, band_list=band_list,
+        ), dtype=gdal_array.flip_code(self.data_type))
+        array.shape = self.raster_count, v2 - v1, u2 - u1
+
+        # dataset properties
+        p, a, b, q, c, d = self.geo_transform
+        geo_transform = p + a * u1 + b * v1, a, b, q + c * u1 + d * v1, c, d
+        dataset = dict2dataset(dict(
+            array=array,
+            geotransform=geo_transform,
+            projection=self.projection,
+            nodatavalue=self.no_data_value,
+        ))
+        return dict(dataset=dataset, array=array)
+
+    def write_block(self, block, array):
+        """ Write a dataset to a block. """
+        u1, u2, v1, v2 = self.get_offsets(block)
+        band_list = range(1, self.raster_count + 1)
+        self.dataset.WriteRaster(
+            u1, v1, u2 - u1, v2 - v1, array.tostring(), band_list=band_list,
+        )
+        # self.dataset.FlushCache() wasn't good enough. This method
+        # closes and reopens the dataset to really flush any cache.
+        self.dataset = gdal.Open(self.dataset.GetFileList()[0], gdal.GA_Update)
+
+    def get_extent(self, projection=None):
+        pass
+
+    def get_pixel_size(self, projection=None):
+        """ Get the size of a pixel, assuming square. """
+        return self.geo_transform[1], -self.geo_transform[5]
+
+    def get_pixel_geometry(indices=(0, 0), projection=None):
+        """ Return a geometry corresponding to a raster pixel. """
+        pass
+
+    def get_outline_geometry(projection=None):
+        """ Return a polygon corresponding to the outline of the raster. """
+        pass
+
+
+class SharedMemoryDataset(object):
+    """
+    Wrapper for a gdal dataset in a shared memory buffer.
+    """
+    def __init__(self, dataset):
+        """ Initialize a dataset. """
+        dtype = get_dtype(dataset)
+        shape = get_shape(dataset)
+        no_data_value = get_no_data_value(dataset)
+
+        geotransform = dataset.GetGeoTransform()
+
+        # Create underlying numpy array with data in shared buffer
+        size = shape[0] * shape[1] * shape[2] * dtype.itemsize
+        self.array = np.frombuffer(
+            multiprocessing.RawArray('b', size), dtype,
+        ).reshape(*shape)
+
+        # Create a dataset from it
+        self.dataset = dict2dataset(dict(array=self.array,
+                                    geotransform=geotransform,
+                                    nodatavalue=no_data_value,
+                                    projection=dataset.GetProjection()))
+
+        # Directly read the dataset into the shared memory array
+        dataset.ReadAsArray(buf_obj=self.array)
 
 
 class Geometry(object):
@@ -214,7 +352,6 @@ class Pyramid(AbstractGeoContainer):
     """
     Add and get geodata to and from a paramid of datafiles.
     """
-
     _LOCKFILE = 'pyramid.lock'
     CONFIG_FILE = 'pyramid.json'
     CONFIG_ATTRIBUTES = ['algorithm',

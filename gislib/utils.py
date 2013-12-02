@@ -7,7 +7,6 @@ from __future__ import division
 
 from osgeo import gdal
 from osgeo import osr
-import numpy as np
 
 from gislib import projections
 from gislib import vectors

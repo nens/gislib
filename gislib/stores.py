@@ -40,8 +40,8 @@ class BaseStore(object):
         geometry = vectors.Geometry(wkb)
         envelope = geometry.envelope
         extent = geometry.extent
-        nodatavalue = self.info['nodatavalue']
-        datatype = self.info['datatype']
+        nodatavalue = self.manager.no_data_value
+        datatype = self.manager.data_type
 
         # Initialize resulting array to nodatavalue
         dtype = gdal_array.flip_code(datatype)
@@ -51,7 +51,15 @@ class BaseStore(object):
         ) * dtype(nodatavalue)
 
         # Create dataset and use it to retrieve data from the store
-        dataset = rasters.array2dataset(array=array, extent=extent, crs=crs)
+        array_dict = dict(
+            array=array,
+            nodatavalue=nodatavalue,
+            projection=projections.get_wkt(crs),
+            geotransform=rasters.get_geotransform(
+                extent=extent, width=size[0], height=size[1],
+            ),
+        )
+        dataset = rasters.dict2dataset(array_dict)
         self.warpinto(dataset)
         dataset.FlushCache()
 
@@ -105,8 +113,21 @@ class BaseStore(object):
 
         return distances, values
 
-    def get_data_for_point(self, wkb, crs, size):
-        pass
+    def get_data_for_point(self, wkb, crs, size=None):
+        """get_data_for_point(
+               ogr.CreateGeometryFromWkt('POINT(3 4)').ExportToWkb(),
+               projections.RD)
+
+        Size is ignored.
+        """
+
+        # Reproject point into dataset's projection
+        transformation = projections.get_coordinate_transformation(
+            crs, self.projection)
+        wkb.Transform(transformation)
+
+        # Fetch single point from dataset
+        return self.fetch_single_point(wkb.x, wkb.y)
 
     HANDLERS = {
         ogr.wkbPolygon: get_data_for_polygon,
