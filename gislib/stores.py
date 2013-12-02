@@ -129,7 +129,6 @@ class BaseStore(object):
         # Fetch single point from dataset
         return self.fetch_single_point(wkb.x, wkb.y)
 
-
     HANDLERS = {
         ogr.wkbPolygon: get_data_for_polygon,
         ogr.wkbLineString: get_data_for_linestring,

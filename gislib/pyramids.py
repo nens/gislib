@@ -339,11 +339,12 @@ class Grid(object):
         tile = get_tile(self.spacing, (x, y))
         path = self.tile2path(tile)
         try:
+            logger.debug("Fetching single point: {}".format(path))
             dataset = gdal.Open(path)
         except RuntimeError:
-            return [None] * self.rastercount
+            return [None]  #* self.rastercount
 
-        values = point_from_dataset(dataset, self.data_type, (x, y))
+        values = point_from_dataset(dataset, (x, y))
         return np.ma.masked_equal(values, self.no_data_value).tolist()
 
     def warpinto(self, dataset):
@@ -612,6 +613,11 @@ class Pyramid(stores.BaseStore):
         self.lock()
         manager = Manager(self.path)  # do not use the cached manager
         manager.add(dataset, **kwargs)
+
+        if not os.path.exists(os.path.join(self.path, PYRAMID_MARKER_FILE)):
+            # Create empty file
+            open(os.path.join(self.path, PYRAMID_MARKER_FILE), 'w')
+
         self.unlock()
         if sync:
             manager.sync()
@@ -622,6 +628,11 @@ class Pyramid(stores.BaseStore):
 
     def sync(self):
         return self.manager.sync()
+
+    @property
+    def extent(self):
+        """ Return pyramid extent tuple. """
+        return self.manager.extent
 
     #def single(self, point):
         #""" Return value from lowest level. """
