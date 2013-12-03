@@ -616,10 +616,6 @@ class Pyramid(stores.BaseStore):
         manager = Manager(self.path)  # do not use the cached manager
         manager.add(dataset, **kwargs)
 
-        if not os.path.exists(os.path.join(self.path, PYRAMID_MARKER_FILE)):
-            # Create empty file
-            open(os.path.join(self.path, PYRAMID_MARKER_FILE), 'w')
-
         self.unlock()
         if sync:
             manager.sync()
