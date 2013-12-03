@@ -37,6 +37,8 @@ transport = None
 GDAL_DRIVER_GTIFF = gdal.GetDriverByName(b'gtiff')
 TIMEOUT = 60  # seconds
 
+PYRAMID_MARKER_FILE = '.this.is.a.pyramid'
+
 
 def initialize(arg_transport):
     """ Set some pool data globally. """
@@ -393,7 +395,7 @@ class Manager(object):
 
     @property
     def peakpath(self):
-        return os.path.join(self.path, '.pyramid.tif')
+        return os.path.join(self.path, b'.pyramid.tif')
 
     @property
     def extent(self):
@@ -424,7 +426,7 @@ class Manager(object):
         geotransform = x1, (x2 - x1) / 256, 0, y2, 0, (y1 - y2) / 256
 
         # create
-        fd, temppath = tempfile.mkstemp(dir=self.path, prefix='.pyramid.tmp.')
+        fd, temppath = tempfile.mkstemp(dir=self.path, prefix=b'.pyramid.tmp.')
         dataset = GDAL_DRIVER_GTIFF.Create(temppath,
                                            256,
                                            256,
@@ -478,7 +480,7 @@ class Manager(object):
         """
         level = self.levels[index]
         paths = glob.iglob(os.path.join(
-            self.path, str(level), '*', '*',
+            self.path, str(level), b'*', b'*',
         ))
         for path in paths:
             yield gdal.Open(path)
@@ -577,7 +579,7 @@ class Pyramid(stores.BaseStore):
 
     @property
     def lockpath(self):
-        return os.path.join(self.path, '.pyramid.lock')
+        return os.path.join(self.path, b'.pyramid.lock')
 
     def lock(self):
         """ Create a lockfile. """
