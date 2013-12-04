@@ -417,6 +417,11 @@ class Manager(object):
         """
         Create or replace the peak with current data.
         """
+        ### XXX
+        # Only create an empty file with name of peakpath
+        open(self.peakpath, 'w')
+        return
+
         cropped = []
         for dataset in self.get_datasets(-1):
             cropped.append(crop(dataset))
