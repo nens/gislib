@@ -59,18 +59,18 @@ class BaseStore(object):
                 extent=extent, width=size[0], height=size[1],
             ),
         )
-        dataset = rasters.dict2dataset(array_dict)
+        dataset = rasters.dict2dataset(array_dict)        
         self.warpinto(dataset)
-        dataset.FlushCache()
+        dataset.FlushCache()        
 
         # Cut when necessary
-        if not envelope.Equals(wkb):
+        if not envelope.Equals(wkb):            
             source = OGR_MEM_DRIVER.CreateDataSource('')
             sr = projections.get_spatial_reference(crs)
             layer = source.CreateLayer(b'', sr)
             defn = layer.GetLayerDefn()
             feature = ogr.Feature(defn)
-            feature.SetGeometry(wkb)
+            feature.SetGeometry(envelope.Difference(wkb))
             layer.CreateFeature(feature)
             gdal.RasterizeLayer(dataset, (1,), layer,
                                 burn_values=(nodatavalue,))

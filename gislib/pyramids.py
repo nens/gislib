@@ -353,6 +353,7 @@ class Grid(object):
         """ Warp appropriate tiles into dataset. """
         for source in self.get_datasets(dataset):
             rasters.reproject(source, dataset)
+            
 
 
 class Manager(object):
