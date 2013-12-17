@@ -65,5 +65,8 @@ def get_proj4(projection):
 def get_authority(projection):
     """ Convenience function. """
     sr = get_spatial_reference(projection)
-    return '{}:{}'.format(sr.GetAttrValue(b"AUTHORITY", 0),
-                          sr.GetAttrValue(b"AUTHORITY", 1))
+    key = sr.GetAttrValue(b"AUTHORITY", 0)
+    value = sr.GetAttrValue(b"AUTHORITY", 1)
+    if key and value:
+        return '{}:{}'.format(key, value)
+    return None
