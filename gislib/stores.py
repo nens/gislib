@@ -53,9 +53,9 @@ class BaseStore(object):
         # Create dataset and use it to retrieve data from the store
         array_dict = dict(
             array=array,
-            nodatavalue=nodatavalue,
+            no_data_value=nodatavalue,
             projection=projections.get_wkt(crs),
-            geotransform=rasters.get_geotransform(
+            geo_transform=rasters.get_geotransform(
                 extent=extent, width=size[0], height=size[1],
             ),
         )

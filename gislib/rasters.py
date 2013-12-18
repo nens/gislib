@@ -69,25 +69,25 @@ def dict2dataset(dictionary):
     """
     Like array2dataset, but set additional properties on the dataset.
 
-    Dictionary must contain 'array' and may contain: 'geotransform',
-    'projection', 'nodatavalue'
+    Dictionary must contain 'array' and may contain: 'geo_transform',
+    'projection', 'no_data_value'
     """
     # dataset
     array = dictionary['array']
     dataset = array2dataset(array)
-    # geotransform
-    geotransform = dictionary.get('geotransform')
-    if geotransform is not None:
-        dataset.SetGeoTransform(geotransform)
+    # geo_transform
+    geo_transform = dictionary.get('geo_transform')
+    if geo_transform is not None:
+        dataset.SetGeoTransform(geo_transform)
     # projection
     projection = dictionary.get('projection')
     if projection is not None:
-        dataset.SetProjection(projection)
+        dataset.SetProjection(str(projection))
     # nodatavalue
-    nodatavalue = dictionary.get('nodatavalue')
-    if nodatavalue is not None:
+    no_data_value = dictionary.get('no_data_value')
+    if no_data_value is not None:
         for i in range(len(array)):
-            dataset.GetRasterBand(i + 1).SetNoDataValue(nodatavalue)
+            dataset.GetRasterBand(i + 1).SetNoDataValue(no_data_value)
     return dataset
 
 
@@ -120,10 +120,32 @@ def get_shape(dataset):
     return dataset.RasterCount, dataset.RasterYSize, dataset.RasterXSize
 
 
+def get_size(dataset):
+    """ Return the size of the dataset. """
+    return reduce(lambda x, y: x * y, get_shape(dataset))
+
+
 def get_geotransform(extent, width, height):
     """ Return geotransform tuple. """
     x1, y1, x2, y2 = extent
     return x1, (x2 - x1) / width, 0, y2, 0, (y1 - y2) / height
+
+
+def get_shared_array(dataset):
+    """ Return datasets data as shared memory array. """
+    # determine shape and datatype
+    dtype = get_dtype(dataset)
+    shape = get_shape(dataset)
+    
+    # create underlying numpy array with data in shared buffer
+    size = np.product(shape) * dtype.itemsize
+    array = np.frombuffer(
+        multiprocessing.RawArray('b', size), dtype,
+    ).reshape(*shape)
+
+    # Directly read the dataset into the shared memory array
+    dataset.ReadAsArray(buf_obj=array)
+    return array
 
 
 class Dataset(object):
@@ -163,9 +185,9 @@ class Dataset(object):
         geo_transform = p + a * u1 + b * v1, a, b, q + c * u1 + d * v1, c, d
         dataset = dict2dataset(dict(
             array=array,
-            geotransform=geo_transform,
+            geo_transform=geo_transform,
             projection=self.projection,
-            nodatavalue=self.no_data_value,
+            no_data_value=self.no_data_value,
         ))
         return dict(dataset=dataset, array=array)
 
@@ -216,9 +238,9 @@ class SharedMemoryDataset(object):
 
         # Create a dataset from it
         self.dataset = dict2dataset(dict(array=self.array,
-                                    geotransform=geotransform,
-                                    nodatavalue=no_data_value,
-                                    projection=dataset.GetProjection()))
+                                         geo_transform=geotransform,
+                                         no_data_value=no_data_value,
+                                         projection=dataset.GetProjection()))
 
         # Directly read the dataset into the shared memory array
         dataset.ReadAsArray(buf_obj=self.array)
