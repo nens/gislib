@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.2.13 (unreleased)
+0.2.13 (2013-12-18)
 -------------------
 
 - Added counts for landuse raster.
