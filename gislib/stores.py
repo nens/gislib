@@ -40,8 +40,10 @@ class BaseStore(object):
         geometry = vectors.Geometry(wkb)
         envelope = geometry.envelope
         extent = geometry.extent
-        nodatavalue = self.manager.no_data_value
-        datatype = self.manager.data_type
+        nodatavalue = getattr(
+            self.manager, 'no_data_value', getattr(self, 'no_data_value', 0))
+        datatype = getattr(
+            self.manager, 'data_type', getattr(self, 'data_type', None))
 
         # Initialize resulting array to nodatavalue
         dtype = gdal_array.flip_code(datatype)
