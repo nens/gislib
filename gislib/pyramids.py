@@ -413,34 +413,15 @@ class Manager(object):
 
     def sync(self):
         """
-        Create or replace the peak with current data.
+        In the flooding lib branch: Only make sure that the peakpath
+        exists by creating it as an empty file. The .pyramid.tif is
+        needed so that the rasterserver demo page (flooding branch) can
+        tell where a pyramid directory structure starts.
         """
-        cropped = []
-        for dataset in self.get_datasets(-1):
-            cropped.append(crop(dataset))
-        extents = [dataset2outline(c).extent for c in cropped]
-        x1, y1, x2, y2 = zip(*extents)
-        x1, y1, x2, y2 = min(x1), min(y1), max(x2), max(y2)
-        geotransform = x1, (x2 - x1) / 256, 0, y2, 0, (y1 - y2) / 256
-
-        # create
-        fd, temppath = tempfile.mkstemp(dir=self.path, prefix=b'.pyramid.tmp.')
-        dataset = GDAL_DRIVER_GTIFF.Create(temppath,
-                                           256,
-                                           256,
-                                           self.raster_count,
-                                           self.data_type,
-                                           get_options(block_size=(256, 256)))
-        dataset.SetProjection(projections.get_wkt(self.projection))
-        dataset.SetGeoTransform(geotransform)
-        for i in range(self.raster_count):
-            dataset.GetRasterBand(i + 1).SetNoDataValue(self.no_data_value)
-        for c in cropped:
-            rasters.reproject(c, dataset)
-
-        dataset = None
-        os.close(fd)
-        os.rename(temppath, self.peakpath)
+        peakpath = self.peakpath
+        if not os.path.exists(peakpath):
+            open(peakpath, 'w')
+        return
 
     def get_level(self, dataset):
         """
@@ -613,8 +594,8 @@ class Pyramid(stores.BaseStore):
         self.lock()
         manager = Manager(self.path)  # do not use the cached manager
         manager.add(dataset, **kwargs)
-
         self.unlock()
+
         if sync:
             manager.sync()
 
