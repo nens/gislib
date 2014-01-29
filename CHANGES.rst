@@ -5,7 +5,7 @@ Changelog of gislib
 0.2.14 (unreleased)
 -------------------
 
-- Nothing changed yet.
+- Update landuse colors.
 
 
 0.2.13 (2013-12-18)
