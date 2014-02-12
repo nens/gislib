@@ -32,6 +32,10 @@ def array2dataset(array):
     occur. Also, don't forget to call FlushCache() on the dataset after
     any operation that affects the array.
     """
+    # TODO: check if this works for non-contiguous arrays
+    # TODO: check if this works with Fortran memory order
+    
+    
     # Prepare dataset name pointing to array
     datapointer = array.ctypes.data
     bands, lines, pixels = array.shape
@@ -368,6 +372,15 @@ class AbstractGeoContainer(object):
         """ Return None or raise exception. """
         if self.is_locked():
             self._raise_locked_exception()
+    
+    def warpinto(self, dataset):
+        """ Warp our dataset into argument dataset. """
+        # reproject the geoinformation to the target dataset
+        # target dataset is a gdal file that should be filled with rasters
+        # You might want to use the reproject method
+        raise NotImplemented("abstract interface, please implement")
+
+
 
 
 class Pyramid(AbstractGeoContainer):
@@ -745,6 +758,35 @@ class Monolith(AbstractGeoContainer):
 
         self._set_attributes_from_dataset()
         self._unlock()
+
+    def warpinto(self, dataset):
+        """ Warp our dataset into argument dataset. """
+        reproject(source=self.dataset,
+                  target=dataset,
+                  algorithm=self.algorithm)
+
+
+
+class NumpyContainer(AbstractGeoContainer):
+    """
+    Simple dataset container that shares the methods add and warpinto of
+    the in memory arrays.
+    """
+
+    def __init__(self, array, transform,  wkt, interpolation='nearest'):
+        """
+        Create a container that can interpolate numpy arrays
+        """
+
+        
+        src_ds = gdal_array.OpenArray(array)
+        # We're creating two datasets, one to interpolate values, one to interpolate indices
+        src_ds.SetProjection(src_ds.GetGCPProjection())
+        src_ds.SetGeoTransform(transform)
+        src_ds.SetProjection(wkt)
+        band = self.dataset.GetRasterBand(1)
+        self.nodatavalue = band.GetNoDataValue()
+        self.datatype = band.DataType
 
     def warpinto(self, dataset):
         """ Warp our dataset into argument dataset. """
