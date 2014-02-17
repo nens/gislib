@@ -777,22 +777,19 @@ class NumpyContainer(AbstractGeoContainer):
         """
         Create a container that can interpolate numpy arrays
         """
-
-        
         src_ds = gdal_array.OpenArray(array)
         # We're creating two datasets, one to interpolate values, one to interpolate indices
         src_ds.SetProjection(src_ds.GetGCPProjection())
         src_ds.SetGeoTransform(transform)
         src_ds.SetProjection(wkt)
-        band = self.dataset.GetRasterBand(1)
+        band = src_ds.GetRasterBand(1)
         self.nodatavalue = band.GetNoDataValue()
         self.datatype = band.DataType
-
+        self.dataset = src_ds
     def warpinto(self, dataset):
         """ Warp our dataset into argument dataset. """
         reproject(source=self.dataset,
-                  target=dataset,
-                  algorithm=self.algorithm)
+                  target=dataset)
 
 
 class Container(object):
