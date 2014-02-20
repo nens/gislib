@@ -2,8 +2,8 @@ Changelog of gislib
 ===================================================
 
 
-0.2.15 (unreleased)
--------------------
+0.3 (2014-02-20)
+----------------
 
 - Added NumpyContainer, used in threedi-wms
 
