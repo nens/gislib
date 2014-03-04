@@ -3,9 +3,9 @@ Changelog of gislib
 
 
 0.4 (unreleased)
-----------------
+================
 
-- Nothing changed yet.
+- Implement nodatavalue in NumpyContainer
 
 
 0.3 (2014-02-20)

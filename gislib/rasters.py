@@ -773,7 +773,7 @@ class NumpyContainer(AbstractGeoContainer):
     the in memory arrays.
     """
 
-    def __init__(self, array, transform,  wkt, interpolation='nearest'):
+    def __init__(self, array, transform,  wkt, interpolation='nearest', nodatavalue=None):
         """
         Create a container that can interpolate numpy arrays
         """
@@ -783,6 +783,8 @@ class NumpyContainer(AbstractGeoContainer):
         src_ds.SetGeoTransform(transform)
         src_ds.SetProjection(wkt)
         band = src_ds.GetRasterBand(1)
+        if nodatavalue is not None:
+            band.SetNoDataValue(nodatavalue)
         self.nodatavalue = band.GetNoDataValue()
         self.datatype = band.DataType
         self.dataset = src_ds
