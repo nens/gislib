@@ -76,7 +76,7 @@ def get_counts(array, bins=256):
     nbins = [bins[:-1][n] for n in nonzeros]
     nhistograms = [h[n] for n, h in zip(nonzeros, histograms)]
     # Determine the ordering
-    argsorts = [h.argsort() for h in nhistograms]
+    argsorts = [h.argsort()[::-1] for h in nhistograms]
     # Use it to group
     pairs = [np.array([b[argsorts], h[argsorts]]).transpose().tolist()
              for b, h in zip(nbins, nhistograms)]
