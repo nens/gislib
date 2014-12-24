@@ -5,7 +5,7 @@ Changelog of gislib
 0.7 (unreleased)
 ================
 
-- Nothing changed yet.
+- Update to newest bootstrap
 
 
 0.6 (2014-12-24)
