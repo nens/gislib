@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.6 (unreleased)
+0.6 (2014-12-24)
 ================
 
 - No topping in get_counts.
