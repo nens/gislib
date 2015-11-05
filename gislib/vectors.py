@@ -106,7 +106,7 @@ class Geometry(object):
                   (x1, y2),
                   (x1, y1))
         return cls(geometry=points2polygon(points))
-    
+
     @property
     def extent(self):
         """ Return x1, y1, x2, y2. """
@@ -243,7 +243,7 @@ def great_circle_distance(coordinates, formula='haversine'):
         # convert decimal degrees to radians
         lon1, lat1, lon2, lat2 = pair[0][0], pair[0][1], pair[1][0], pair[1][1]
         lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-        if formula.lower() ==  'haversine':
+        if formula.lower() == 'haversine':
             # haversine formula
             dlon = lon2 - lon1
             dlat = lat2 - lat1
@@ -252,10 +252,13 @@ def great_circle_distance(coordinates, formula='haversine'):
             km = 6371 * c
             accumulated_km += km
         elif formula.lower() == 'cosine':
-            km = acos(sin(lat1)*sin(lat2)+cos(lat1)*cos(lat2)*cos(lon2-lon1))*6371
+            km = acos(
+                sin(lat1)*sin(lat2)+cos(lat1)*cos(lat2)*cos(lon2-lon1)
+            )*6371
             accumulated_km += km
         else:
-            raise AttributeError("The formula parameter must either be 'haversine' or 'cosine'")
+            raise AttributeError("The formula parameter must either be "
+                                 "'haversine' or 'cosine'")
     return accumulated_km
 
 
