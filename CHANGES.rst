@@ -5,6 +5,9 @@ Changelog of gislib
 0.7 (unreleased)
 ================
 
+- Added ``great_circle_distance`` function to the vectors
+  module (including unittests).
+  
 - Update to newest bootstrap
 
 
