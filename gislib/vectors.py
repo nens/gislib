@@ -210,7 +210,7 @@ class MagicLine(object):
         pass
 
 
-def great_circle_distance(coordinates, formula='haversine'):
+def calculate_great_circle_distance(coordinates, formula='haversine'):
     """
     Calculate the (great circle) distance between two or more points
     on the earth (specified in decimal degrees). If more than two
@@ -228,7 +228,7 @@ def great_circle_distance(coordinates, formula='haversine'):
         coords = [(4.8896900,52.3740300),      # long/lat Amsterdam
                   (13.4105300, 52.5243700)     # long/lat Berlin
                   ]
-        great_circle_distance(coords)
+        calculate_great_circle_distance(coords)
         577.358
 
     """
