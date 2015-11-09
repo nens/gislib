@@ -2,7 +2,7 @@ Changelog of gislib
 ===================================================
 
 
-0.7 (unreleased)
+0.7 (2015-11-09)
 ================
 
 - Added ``calculate_great_circle_distance`` function to the vectors
