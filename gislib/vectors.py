@@ -6,6 +6,9 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import division
 
+from math import radians, sin, cos, asin, sqrt, acos
+from itertools import izip, tee
+
 from osgeo import ogr
 
 import numpy as np
@@ -103,7 +106,7 @@ class Geometry(object):
                   (x1, y2),
                   (x1, y1))
         return cls(geometry=points2polygon(points))
-    
+
     @property
     def extent(self):
         """ Return x1, y1, x2, y2. """
@@ -205,3 +208,62 @@ class MagicLine(object):
         Find closest projection of each point on the magic line.
         """
         pass
+
+
+def calculate_great_circle_distance(coordinates, formula='haversine'):
+    """
+    Calculate the (great circle) distance between two or more points
+    on the earth (specified in decimal degrees). If more than two
+    points are given the accumulated distance will be calculated.
+
+    :param coordinates: list of lists or list of tuples of
+                        geographic coordinates as decimal
+                        fractions (decimal degrees)
+    :param formula: haversine or cosine (use cosine cosine for
+                    points with a greater distance between them)
+
+    :return distance in km
+
+    example usage::
+        coords = [(4.8896900,52.3740300),      # long/lat Amsterdam
+                  (13.4105300, 52.5243700)     # long/lat Berlin
+                  ]
+        calculate_great_circle_distance(coords)
+        577.358
+
+    """
+    if not isinstance(coordinates[0], (list, tuple)):
+        raise ValueError('Coordinates must be either provided as a '
+                         'list of lists or list of tuples')
+
+    izip_pairs = _pairwise(coordinates)
+
+    accumulated_km = 0
+    for pair in izip_pairs:
+        # convert decimal degrees to radians
+        lon1, lat1, lon2, lat2 = pair[0][0], pair[0][1], pair[1][0], pair[1][1]
+        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+        if formula.lower() == 'haversine':
+            # haversine formula
+            dlon = lon2 - lon1
+            dlat = lat2 - lat1
+            a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+            c = 2 * asin(sqrt(a))
+            km = 6371 * c
+            accumulated_km += km
+        elif formula.lower() == 'cosine':
+            km = acos(
+                sin(lat1)*sin(lat2)+cos(lat1)*cos(lat2)*cos(lon2-lon1)
+            )*6371
+            accumulated_km += km
+        else:
+            raise AttributeError("The formula parameter must either be "
+                                 "'haversine' or 'cosine'")
+    return accumulated_km
+
+
+def _pairwise(iterable):
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    a, b = tee(iterable)
+    next(b, None)
+    return izip(a, b)
