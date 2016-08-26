@@ -267,3 +267,33 @@ def _pairwise(iterable):
     a, b = tee(iterable)
     next(b, None)
     return izip(a, b)
+
+
+def get_bbox(pnts):
+    """
+    :param pnts: numpy array
+    [[x,y],
+    [x,y],
+    ...,]
+    :return bounding box of pnts [[x_min, y_min], [x_max, y_max]]
+    """
+    a = np.zeros((2, 2))
+    a[0] = np.min(pnts, axis=0)
+    a[1] = np.max(pnts, axis=0)
+    return a
+
+
+def get_extent(bboxes):
+    """
+    :param bboxes: tuple of numpy arrays with xy coordinates
+        (
+        [[x_min, y_min], x_max, y_max]],
+        [[x_min, y_min], x_max, y_max]],
+        ...
+        )
+    :returns the bounding box of all coordinate collections
+        numpy array --> [[x_min, y_min],[x_max, y_max]]
+
+    """
+    merged_pnts = np.concatenate(bboxes)
+    return get_bbox(merged_pnts)

@@ -5,7 +5,10 @@ Changelog of gislib
 0.8 (unreleased)
 ================
 
-- Nothing changed yet.
+- Added functions ``get_bbox()`` and ``get_extent()`` to the vectors module.
+  The first calculates the bounding box for two dimensional numpy array
+  (a set of xy coordinates). The later calculates the bounding box
+  for a collection of points.
 
 
 0.7 (2015-11-09)
