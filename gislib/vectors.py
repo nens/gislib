@@ -7,7 +7,7 @@ from __future__ import absolute_import
 from __future__ import division
 
 from math import radians, sin, cos, asin, sqrt, acos
-from itertools import izip, tee
+from itertools import tee
 
 from osgeo import ogr
 
