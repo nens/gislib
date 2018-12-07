@@ -153,7 +153,7 @@ class Dataset(object):
         # read the data
         u1, u2, v1, v2 = self.get_offsets(block)
         band_list = range(1, self.raster_count + 1)
-        array = np.fromstring(self.dataset.ReadRaster(
+        array = np.frombuffer(self.dataset.ReadRaster(
             u1, v1, u2 - u1, v2 - v1, band_list=band_list,
         ), dtype=gdal_array.flip_code(self.data_type))
         array.shape = self.raster_count, v2 - v1, u2 - u1
